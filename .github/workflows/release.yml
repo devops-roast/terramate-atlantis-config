@@ -1,4 +1,5 @@
-name: Release
+---
+name: release
 
 on:
   push:
@@ -8,24 +9,27 @@ on:
 permissions:
   contents: write
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   release:
-    name: Release
+    name: release
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: "1.25"
-      - name: Generate token from GitHub App
+      - name: generate token from github app
         id: github_app
         uses: getsentry/action-github-app-token@d4b5da6c5e37703f8c3b3e43abb5705b46e159cc # v3
         with:
           app_id: 1817613
           private_key: ${{ secrets.DEVOPS_ROAST_BOT_GH_APP_PRIVATE_KEY }}
-      - uses: goreleaser/goreleaser-action@v6
+      - uses: goreleaser/goreleaser-action@v7
         with:
           version: latest
           args: release --clean
