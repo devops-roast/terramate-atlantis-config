@@ -13,6 +13,7 @@ on:
 
 jobs:
   pre-commit:
+    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
     uses: devops-roast/github-actions/.github/workflows/pre-commit.yaml@main
     with:
       auto_commit: true

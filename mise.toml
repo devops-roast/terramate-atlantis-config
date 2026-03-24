@@ -1,3 +1,6 @@
+[settings]
+experimental = true
+
 [tools]
 go = "1.25"
 "aqua:golangci/golangci-lint" = "2.11.4"
