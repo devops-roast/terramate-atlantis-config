@@ -19,11 +19,11 @@ linters:
     - nilerr
     - bodyclose
     - durationcheck
-    - exportloopref
+    - copyloopvar
     - makezero
     - noctx
     - predeclared
-    - tenv
+    - usetesting
     - tparallel
     - wastedassign
 
