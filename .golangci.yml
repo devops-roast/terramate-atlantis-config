@@ -1,54 +1,64 @@
+version: "2"
 run:
-  timeout: 5m
   modules-download-mode: readonly
-
 linters:
   enable:
-    - errcheck
-    - govet
-    - ineffassign
-    - staticcheck
-    - unused
-    - gosimple
-    - gocritic
-    - gofmt
-    - goimports
-    - misspell
-    - unconvert
-    - unparam
-    - nilerr
     - bodyclose
-    - durationcheck
     - copyloopvar
+    - durationcheck
+    - gocritic
     - makezero
+    - misspell
+    - nilerr
     - noctx
     - predeclared
-    - usetesting
     - tparallel
+    - unconvert
+    - unparam
+    - usetesting
     - wastedassign
-
-linters-settings:
-  gocritic:
-    enabled-tags:
-      - diagnostic
-      - style
-      - performance
-    disabled-checks:
-      - hugeParam
-      - rangeValCopy
-
-  goimports:
-    local-prefixes: github.com/devops-roast/terramate-atlantis-config
-
-  misspell:
-    locale: US
-
+  settings:
+    gocritic:
+      disabled-checks:
+        - hugeParam
+        - rangeValCopy
+      enabled-tags:
+        - diagnostic
+        - style
+        - performance
+    misspell:
+      locale: US
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - linters:
+          - gocritic
+          - unparam
+          - noctx
+        path: _test\.go
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
 issues:
-  exclude-rules:
-    - path: _test\.go
-      linters:
-        - unparam
-        - gocritic
-
   max-issues-per-linter: 0
   max-same-issues: 0
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/devops-roast/terramate-atlantis-config
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
