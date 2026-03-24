@@ -1,0 +1,4 @@
+ARG ATLANTIS_IMAGE=ghcr.io/runatlantis/atlantis:latest
+FROM ${ATLANTIS_IMAGE}
+
+COPY bin/terramate-atlantis-config /usr/local/bin/terramate-atlantis-config

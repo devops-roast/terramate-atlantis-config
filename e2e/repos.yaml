@@ -1,0 +1,32 @@
+# Atlantis server-side repository configuration.
+# This runs terramate-atlantis-config as a pre-workflow hook so that
+# atlantis.yaml is dynamically generated from the Terramate stacks
+# found in every pull request.
+
+repos:
+  - id: /.*/
+    pre_workflow_hooks:
+      - run: terramate-atlantis-config generate --output atlantis.yaml --root .
+        description: Generate atlantis.yaml from Terramate stacks
+    allowed_overrides:
+      - workflow
+      - apply_requirements
+    allow_custom_workflows: true
+
+workflows:
+  default:
+    plan:
+      steps:
+        - init
+        - plan
+    apply:
+      steps:
+        - apply
+  production:
+    plan:
+      steps:
+        - init
+        - plan
+    apply:
+      steps:
+        - apply
