@@ -269,7 +269,7 @@ func parseTagWorkflows(entries []string) (map[string]string, error) {
 	return mapping, nil
 }
 
-func loadFileConfig(rootDir string, configPath string) (*internalconfig.FileConfig, error) {
+func loadFileConfig(rootDir, configPath string) (*internalconfig.FileConfig, error) {
 	if configPath == "" {
 		return internalconfig.LoadConfig(rootDir)
 	}

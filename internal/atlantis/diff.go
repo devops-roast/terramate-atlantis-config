@@ -1,13 +1,14 @@
 package atlantis
 
 import (
+	"bytes"
 	"strings"
 
 	"github.com/pmezard/go-difflib/difflib"
 )
 
 func Diff(oldContent, newContent []byte, filename string) (string, bool) {
-	if string(oldContent) == string(newContent) {
+	if bytes.Equal(oldContent, newContent) {
 		return "", false
 	}
 

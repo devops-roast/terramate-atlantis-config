@@ -7,8 +7,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/devops-roast/terramate-atlantis-config/internal/discovery"
 	"gopkg.in/yaml.v3"
+
+	"github.com/devops-roast/terramate-atlantis-config/internal/discovery"
 )
 
 // ProjectNameStrategy controls how project names are generated from stack paths.
