@@ -1,0 +1,71 @@
+name: terramate-atlantis-config
+description: Generate Atlantis config for Terramate projects
+author: devops-roast
+
+branding:
+  icon: settings
+  color: purple
+
+inputs:
+  version:
+    description: Version of terramate-atlantis-config to install
+    required: false
+    default: latest
+  root:
+    description: Root directory of the Terramate project
+    required: false
+    default: "."
+  output:
+    description: Output file path
+    required: false
+    default: atlantis.yaml
+  args:
+    description: Additional arguments to pass to the generate command
+    required: false
+    default: ""
+  check:
+    description: Run in check mode (fail if atlantis.yaml is out of date)
+    required: false
+    default: "false"
+
+outputs:
+  projects:
+    description: Number of projects generated
+    value: ${{ steps.generate.outputs.projects }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install terramate-atlantis-config
+      shell: bash
+      run: |
+        if [ "${{ inputs.version }}" = "latest" ]; then
+          go install github.com/devops-roast/terramate-atlantis-config@latest
+        else
+          go install github.com/devops-roast/terramate-atlantis-config@${{ inputs.version }}
+        fi
+
+    - name: Generate atlantis.yaml
+      id: generate
+      shell: bash
+      run: |
+        ARGS="--root ${{ inputs.root }} --output ${{ inputs.output }}"
+
+        if [ "${{ inputs.check }}" = "true" ]; then
+          ARGS="$ARGS --check"
+        fi
+
+        if [ -n "${{ inputs.args }}" ]; then
+          ARGS="$ARGS ${{ inputs.args }}"
+        fi
+
+        OUTPUT=$(terramate-atlantis-config generate $ARGS 2>&1) || {
+          echo "$OUTPUT"
+          exit 1
+        }
+
+        echo "$OUTPUT"
+
+        # Extract project count from stderr output
+        PROJECTS=$(echo "$OUTPUT" | grep -oP 'with \K[0-9]+' || echo "0")
+        echo "projects=$PROJECTS" >> "$GITHUB_OUTPUT"
