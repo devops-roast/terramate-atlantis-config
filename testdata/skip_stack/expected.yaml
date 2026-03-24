@@ -1,0 +1,13 @@
+version: 3
+automerge: false
+parallel_plan: true
+parallel_apply: true
+projects:
+    - name: keep
+      dir: keep
+      autoplan:
+        enabled: true
+        when_modified:
+            - '*.tf'
+            - '*.tf.json'
+            - .terraform.lock.hcl
