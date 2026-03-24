@@ -1,0 +1,54 @@
+run:
+  timeout: 5m
+  modules-download-mode: readonly
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - gosimple
+    - gocritic
+    - gofmt
+    - goimports
+    - misspell
+    - unconvert
+    - unparam
+    - nilerr
+    - bodyclose
+    - durationcheck
+    - exportloopref
+    - makezero
+    - noctx
+    - predeclared
+    - tenv
+    - tparallel
+    - wastedassign
+
+linters-settings:
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - style
+      - performance
+    disabled-checks:
+      - hugeParam
+      - rangeValCopy
+
+  goimports:
+    local-prefixes: github.com/devops-roast/terramate-atlantis-config
+
+  misspell:
+    locale: US
+
+issues:
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - unparam
+        - gocritic
+
+  max-issues-per-linter: 0
+  max-same-issues: 0
