@@ -1,0 +1,8 @@
+- id: terramate-atlantis-config
+  name: terramate-atlantis-config
+  description: Generate atlantis.yaml from Terramate stacks
+  entry: terramate-atlantis-config generate
+  language: golang
+  pass_filenames: false
+  always_run: true
+  types_or: [hcl, terraform]
