@@ -1,22 +1,35 @@
-# terramate-atlantis-config
+<div align="center">
 
-Generates `atlantis.yaml` from your [Terramate](https://terramate.io) stacks.
+## **terramate-atlantis-config**
+
+Generate `atlantis.yaml` from your Terramate stacks.
 
 [![CI](https://github.com/devops-roast/terramate-atlantis-config/actions/workflows/ci.yml/badge.svg)](https://github.com/devops-roast/terramate-atlantis-config/actions)
 [![Release](https://img.shields.io/github/v/release/devops-roast/terramate-atlantis-config)](https://github.com/devops-roast/terramate-atlantis-config/releases)
 [![Go Report Card](https://goreportcard.com/badge/github.com/devops-roast/terramate-atlantis-config)](https://goreportcard.com/report/github.com/devops-roast/terramate-atlantis-config)
 
-## Before you begin
+[Description](#-description) • [Install](#-install) • [Getting Started](#-getting-started) • [Configuration](#️-configuration) • [How It Works](#-how-it-works) • [Recipes](#-recipes) • [CI/CD](#-cicd-integration) • [Contributing](#-contributing) • [Development](#️-development)
 
-You need:
+</div>
 
-- [Terramate](https://terramate.io/docs/cli/installation) installed and a repo with at least one stack
-- [Atlantis](https://www.runatlantis.io/docs/installation-guide.html) set up to consume `atlantis.yaml`
-- Go 1.25+ (if installing from source)
+## 📚 Description
 
-This tool reads your Terramate stack definitions and git history. It does not run Terraform or modify any stack files.
+**terramate-atlantis-config** reads your [Terramate](https://terramate.io) stack definitions and git history, then generates an `atlantis.yaml` configuration file for [Atlantis](https://www.runatlantis.io). It's built for teams running Terramate alongside Atlantis who want to stop hand-maintaining project lists as their stack count grows.
 
-## Install
+Instead of updating `atlantis.yaml` every time you add, rename, or remove a stack, you run this tool in CI and let it do the bookkeeping. It does not run Terraform or modify any stack files.
+
+### ✨ Key Features
+
+- **Stack discovery via Terramate SDK:** walks your repo and collects all stacks, respecting tag and path filters.
+- **Per-stack overrides via globals:** set `atlantis_workflow`, `atlantis_skip`, and more directly in any stack's globals block.
+- **Change detection:** pass `--changed` to only include stacks that differ from a base git ref.
+- **Dependency tracking and execution ordering:** reads Terramate's dependency graph to populate `depends_on` and execution order groups.
+- **Configurable project naming with auto-disambiguation:** four strategies for deriving project names from stack paths, with automatic collision resolution.
+- **CI modes:** `--check` exits non-zero if the output would change; `--diff` prints a unified diff.
+- **Config file support:** store defaults in `.terramate-atlantis.yaml` at your repo root.
+- **Pre-commit hook:** regenerate on every commit without any extra CI step.
+
+## 🔧 Install
 
 **Go install:**
 
@@ -40,7 +53,13 @@ cd terramate-atlantis-config
 make install
 ```
 
-## Getting started
+## 🚀 Getting Started
+
+You need:
+
+- [Terramate](https://terramate.io/docs/cli/installation) installed and a repo with at least one stack
+- [Atlantis](https://www.runatlantis.io/docs/installation-guide.html) set up to consume `atlantis.yaml`
+- Go 1.25+ (if installing from source)
 
 Run this from your repo root:
 
@@ -65,7 +84,7 @@ projects:
         - .terraform.lock.hcl
 ```
 
-## Configuration reference
+## ⚙️ Configuration
 
 ### Config file
 
@@ -186,7 +205,7 @@ globals {
 }
 ```
 
-## How it works
+## 🔍 How It Works
 
 1. **Stack discovery.** The tool walks your repo using the Terramate SDK and collects all stacks, respecting tag filters and path filters you specify.
 2. **Globals extraction.** For each stack, it reads Terramate globals to pick up per-stack overrides (`atlantis_workflow`, `atlantis_skip`, etc.).
@@ -203,7 +222,7 @@ Project names are derived from stack paths. Four strategies control the format:
 
 If two stacks would produce the same name, the tool adds parent segments until names are unique.
 
-## Recipes
+## 💡 Recipes
 
 **Generate for changed stacks only:**
 
@@ -226,6 +245,9 @@ changed: true
 terramate-atlantis-config generate --output atlantis.yaml --check
 ```
 
+> [!TIP]
+> Combine `--check` with `--diff` to see exactly what changed when the check fails.
+
 **Map tags to workflows:**
 
 ```sh
@@ -244,7 +266,7 @@ terramate-atlantis-config generate --generate-workflows --output atlantis.yaml
 terramate-atlantis-config generate --project-name-prefix "stacks/aws"
 ```
 
-## CI/CD integration
+## 🔌 CI/CD Integration
 
 **GitHub Actions** — fail the build if `atlantis.yaml` is out of sync:
 
@@ -272,18 +294,35 @@ repos:
         args: [--output, atlantis.yaml]
 ```
 
-## Development
+> [!NOTE]
+> The pre-commit hook regenerates `atlantis.yaml` in place. Stage the updated file as part of your commit or let your CI catch any drift with `--check`.
 
-Prerequisites: Go 1.25, managed via `mise.toml`.
+## 🤝 Contributing
 
-```sh
-mise install          # install go and tooling
-make test             # run tests
-make lint             # run linters
-make build            # build binary
-make check            # full ci check (vet + fmt + test)
-make help             # list all targets
-```
+Contributions are welcome! To suggest an enhancement, report a bug, or submit a pull request:
+
+- [Open a feature request](https://github.com/devops-roast/terramate-atlantis-config/issues/new?labels=enhancement&template=feature.yml) for new functionality.
+- [Open a bug report](https://github.com/devops-roast/terramate-atlantis-config/issues/new?template=bug.yml) if something isn't working as expected.
+- Fork the repository, create a feature branch, make your changes and tests, then open a pull request. Please ensure all tests pass and follow the existing code style.
+
+## 🛠️ Development
+
+1. Fork this project.
+1. Install [mise](https://mise.jdx.dev/installing-mise.html).
+1. Install the dependencies:
+   ```sh
+   mise trust
+   mise install
+   ```
+1. Make changes and run the tests to make sure everything works. ✅
+   ```sh
+   make test     # run tests
+   make lint     # run linters
+   make build    # build binary
+   make check    # full CI check (vet + fmt + test)
+   make help     # list all targets
+   ```
+1. Commit your changes, push them to the repository 🚀, and open a new pull request.
 
 ## License
 
