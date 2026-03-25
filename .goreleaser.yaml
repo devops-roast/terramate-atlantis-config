@@ -28,12 +28,14 @@ builds:
 
 archives:
   - id: default
-    format: tar.gz
+    formats:
+      - tar.gz
     name_template: >-
       {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
     format_overrides:
       - goos: windows
-        format: zip
+        formats:
+          - zip
 
 checksum:
   name_template: checksums.txt
@@ -49,22 +51,26 @@ changelog:
       - Merge pull request
       - Merge branch
 
-brews:
+homebrew_casks:
   - name: terramate-atlantis-config
     repository:
       owner: devops-roast
       name: homebrew-tap
     homepage: https://github.com/devops-roast/terramate-atlantis-config
     description: Generate Atlantis config for Terramate projects
-    license: MIT
-    install: |
-      bin.install "terramate-atlantis-config"
-    test: |
-      system "#{bin}/terramate-atlantis-config", "version"
+    binaries:
+      - terramate-atlantis-config
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/terramate-atlantis-config"]
+          end
 
 nfpms:
   - id: packages
     package_name: terramate-atlantis-config
+    maintainer: devops-roast <devops-roast@users.noreply.github.com>
     vendor: devops-roast
     homepage: https://github.com/devops-roast/terramate-atlantis-config
     description: Generate Atlantis config for Terramate projects

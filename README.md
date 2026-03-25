@@ -25,7 +25,7 @@ go install github.com/devops-roast/terramate-atlantis-config@latest
 
 **Homebrew:**
 ```sh
-brew install devops-roast/tap/terramate-atlantis-config
+brew install --cask devops-roast/tap/terramate-atlantis-config
 ```
 
 **Binary download:** grab the latest from [GitHub Releases](https://github.com/devops-roast/terramate-atlantis-config/releases) and put it on your `PATH`.
