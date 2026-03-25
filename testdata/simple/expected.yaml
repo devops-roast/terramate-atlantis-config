@@ -3,11 +3,11 @@ automerge: false
 parallel_plan: true
 parallel_apply: true
 projects:
-    - name: stack-a
-      dir: stack-a
-      autoplan:
-        enabled: true
-        when_modified:
-            - '*.tf'
-            - '*.tf.json'
-            - .terraform.lock.hcl
+  - name: stack-a
+    dir: stack-a
+    autoplan:
+      enabled: true
+      when_modified:
+        - '*.tf'
+        - '*.tf.json'
+        - .terraform.lock.hcl

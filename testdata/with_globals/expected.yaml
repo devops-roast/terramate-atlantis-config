@@ -3,14 +3,14 @@ automerge: false
 parallel_plan: true
 parallel_apply: true
 projects:
-    - name: prod
-      dir: prod
-      workflow: production
-      terraform_version: 1.5.0
-      autoplan:
-        enabled: true
-        when_modified:
-            - '*.tf'
-            - '*.tf.json'
-            - .terraform.lock.hcl
-            - ../modules/**/*.tf
+  - name: prod
+    dir: prod
+    workflow: production
+    terraform_version: 1.5.0
+    autoplan:
+      enabled: true
+      when_modified:
+        - '*.tf'
+        - '*.tf.json'
+        - .terraform.lock.hcl
+        - ../modules/**/*.tf

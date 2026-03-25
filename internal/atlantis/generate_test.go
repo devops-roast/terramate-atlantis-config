@@ -371,14 +371,14 @@ automerge: false
 parallel_plan: true
 parallel_apply: true
 projects:
-    - dir: aws/prod
-      workflow: custom
-      terraform_version: 1.5.0
-      autoplan:
-        enabled: true
-        when_modified:
-            - '*.tf'
-            - ../modules/**/*.tf
+  - dir: aws/prod
+    workflow: custom
+    terraform_version: 1.5.0
+    autoplan:
+      enabled: true
+      when_modified:
+        - '*.tf'
+        - ../modules/**/*.tf
 `
 
 	if string(got) != want {

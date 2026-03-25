@@ -1,6 +1,7 @@
 package atlantis
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"path/filepath"
@@ -191,10 +192,13 @@ func PreserveWorkflows(existingYAML []byte, cfg *Config) error {
 
 // MarshalYAML marshals an Atlantis Config into YAML.
 func MarshalYAML(cfg Config, addHeader bool) ([]byte, error) {
-	marshaled, err := yaml.Marshal(cfg)
-	if err != nil {
+	var buf bytes.Buffer
+	enc := yaml.NewEncoder(&buf)
+	enc.SetIndent(2)
+	if err := enc.Encode(cfg); err != nil {
 		return nil, err
 	}
+	marshaled := buf.Bytes()
 
 	if !addHeader {
 		return marshaled, nil

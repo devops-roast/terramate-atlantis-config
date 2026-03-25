@@ -3,27 +3,27 @@ automerge: false
 parallel_plan: true
 parallel_apply: true
 projects:
-    - name: apps-web
-      dir: apps/web
-      autoplan:
-        enabled: true
-        when_modified:
-            - '*.tf'
-            - '*.tf.json'
-            - .terraform.lock.hcl
-    - name: infra-rds
-      dir: infra/rds
-      autoplan:
-        enabled: true
-        when_modified:
-            - '*.tf'
-            - '*.tf.json'
-            - .terraform.lock.hcl
-    - name: infra-vpc
-      dir: infra/vpc
-      autoplan:
-        enabled: true
-        when_modified:
-            - '*.tf'
-            - '*.tf.json'
-            - .terraform.lock.hcl
+  - name: apps-web
+    dir: apps/web
+    autoplan:
+      enabled: true
+      when_modified:
+        - "*.tf"
+        - "*.tf.json"
+        - .terraform.lock.hcl
+  - name: infra-rds
+    dir: infra/rds
+    autoplan:
+      enabled: true
+      when_modified:
+        - "*.tf"
+        - "*.tf.json"
+        - .terraform.lock.hcl
+  - name: infra-vpc
+    dir: infra/vpc
+    autoplan:
+      enabled: true
+      when_modified:
+        - "*.tf"
+        - "*.tf.json"
+        - .terraform.lock.hcl

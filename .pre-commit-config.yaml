@@ -50,7 +50,7 @@ repos:
 
       - id: golangci-lint
         name: golangci-lint
-        entry: bash -c 'golangci-lint run --fix --timeout=3m ./...'
+        entry: bash -c 'mise exec -- golangci-lint run --fix --timeout=3m ./...'
         language: system
         types: [go]
         pass_filenames: false
