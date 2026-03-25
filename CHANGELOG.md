@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.1.0](https://github.com/devops-roast/terramate-atlantis-config/compare/v1.0.0...v1.1.0) (2026-03-25)
+
+
+### Features
+
+* add pre-commit hook definition ([ede7eef](https://github.com/devops-roast/terramate-atlantis-config/commit/ede7eef034fc8a36c67137bc32452a425f00a818))
+
+
+### Bug Fixes
+
+* regenerate golden files with correct yaml quoting ([a26ade1](https://github.com/devops-roast/terramate-atlantis-config/commit/a26ade10610fa8f57aba4220d4c09dd076c09a1f))
+* resolve goreleaser v2 deprecation warnings ([1dc730b](https://github.com/devops-roast/terramate-atlantis-config/commit/1dc730bf7facaa2a2200f6166008cc1106efc5a0))
+* use 2-space yaml indent and deduplicate testdata stack IDs ([daf2121](https://github.com/devops-roast/terramate-atlantis-config/commit/daf2121fe6e745f33739eb4b7c722b1502eb5136))
+
 ## 1.0.0 (2026-03-24)
 
 
