@@ -19,11 +19,13 @@ This tool reads your Terramate stack definitions and git history. It does not ru
 ## Install
 
 **Go install:**
+
 ```sh
 go install github.com/devops-roast/terramate-atlantis-config@latest
 ```
 
 **Homebrew:**
+
 ```sh
 brew install --cask devops-roast/tap/terramate-atlantis-config
 ```
@@ -31,6 +33,7 @@ brew install --cask devops-roast/tap/terramate-atlantis-config
 **Binary download:** grab the latest from [GitHub Releases](https://github.com/devops-roast/terramate-atlantis-config/releases) and put it on your `PATH`.
 
 **From source:**
+
 ```sh
 git clone https://github.com/devops-roast/terramate-atlantis-config.git
 cd terramate-atlantis-config
@@ -52,14 +55,14 @@ automerge: false
 parallel_plan: true
 parallel_apply: true
 projects:
-    - name: aws-production-vpc
-      dir: stacks/aws/production/vpc
-      autoplan:
-        enabled: true
-        when_modified:
-            - '*.tf'
-            - '*.tf.json'
-            - .terraform.lock.hcl
+  - name: aws-production-vpc
+    dir: stacks/aws/production/vpc
+    autoplan:
+      enabled: true
+      when_modified:
+        - "*.tf"
+        - "*.tf.json"
+        - .terraform.lock.hcl
 ```
 
 ## Configuration reference
@@ -100,80 +103,80 @@ workflows:
 
 **Output**
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--root` | `.` | Root directory to search for stacks |
-| `--output` | stdout | Output file path |
-| `--format` | `yaml` | Output format: `yaml` or `json` |
+| Flag          | Default | Description                          |
+| ------------- | ------- | ------------------------------------ |
+| `--root`      | `.`     | Root directory to search for stacks  |
+| `--output`    | stdout  | Output file path                     |
+| `--format`    | `yaml`  | Output format: `yaml` or `json`      |
 | `--no-header` | `false` | Omit the generated-by header comment |
-| `--config` | | Path to config file |
+| `--config`    |         | Path to config file                  |
 
 **Filtering**
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--filter` | | Include only stacks matching this tag filter |
-| `--filter-path` | | Include only stacks under this path |
-| `--exclude-tags` | | Exclude stacks with these tags |
-| `--exclude-path` | | Exclude stacks under this path |
+| Flag             | Default | Description                                  |
+| ---------------- | ------- | -------------------------------------------- |
+| `--filter`       |         | Include only stacks matching this tag filter |
+| `--filter-path`  |         | Include only stacks under this path          |
+| `--exclude-tags` |         | Exclude stacks with these tags               |
+| `--exclude-path` |         | Exclude stacks under this path               |
 
 **Naming**
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--create-project-name` | `true` | Generate a project name from the stack path |
+| Flag                      | Default      | Description                                                   |
+| ------------------------- | ------------ | ------------------------------------------------------------- |
+| `--create-project-name`   | `true`       | Generate a project name from the stack path                   |
 | `--project-name-strategy` | `auto-strip` | Naming strategy: `auto-strip`, `stack-name`, `last-n`, `full` |
-| `--project-name-prefix` | | Strip this prefix from stack paths when generating names |
-| `--project-name-depth` | `3` | Number of trailing path segments for `last-n` strategy |
-| `--create-workspace` | `false` | Set workspace from stack path |
-| `--sort-by` | `dir` | Sort projects by this field |
+| `--project-name-prefix`   |              | Strip this prefix from stack paths when generating names      |
+| `--project-name-depth`    | `3`          | Number of trailing path segments for `last-n` strategy        |
+| `--create-workspace`      | `false`      | Set workspace from stack path                                 |
+| `--sort-by`               | `dir`        | Sort projects by this field                                   |
 
 **Dependencies**
 
-| Flag | Default | Description |
-|------|---------|-------------|
+| Flag                       | Default | Description                                        |
+| -------------------------- | ------- | -------------------------------------------------- |
 | `--execution-order-groups` | `false` | Add execution order groups from stack dependencies |
-| `--depends-on` | `false` | Add `depends_on` from stack dependencies |
+| `--depends-on`             | `false` | Add `depends_on` from stack dependencies           |
 
 **Workflows**
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--autoplan` | `true` | Enable autoplan for all projects |
-| `--parallel` | `true` | Enable parallel plan and apply |
-| `--automerge` | `false` | Enable automerge in atlantis.yaml |
-| `--workflow` | | Default workflow name for all projects |
-| `--terraform-version` | | Default Terraform version for all projects |
-| `--when-modified` | `*.tf, *.tf.json, .terraform.lock.hcl` | File patterns that trigger autoplan |
-| `--apply-requirements` | | Apply requirements for all projects |
-| `--tag-workflow` | | Map stack tags to workflows |
-| `--tag-requirements` | | Map stack tags to apply requirements |
-| `--preserve-workflows` | `false` | Keep existing workflow blocks from current atlantis.yaml |
-| `--generate-workflows` | `false` | Auto-generate workflow blocks wrapping terraform in `terramate run` |
-| `--workflow-terramate-wrap` | `true` | Wrap terraform commands with `terramate run` in generated workflows |
+| Flag                        | Default                                | Description                                                         |
+| --------------------------- | -------------------------------------- | ------------------------------------------------------------------- |
+| `--autoplan`                | `true`                                 | Enable autoplan for all projects                                    |
+| `--parallel`                | `true`                                 | Enable parallel plan and apply                                      |
+| `--automerge`               | `false`                                | Enable automerge in atlantis.yaml                                   |
+| `--workflow`                |                                        | Default workflow name for all projects                              |
+| `--terraform-version`       |                                        | Default Terraform version for all projects                          |
+| `--when-modified`           | `*.tf, *.tf.json, .terraform.lock.hcl` | File patterns that trigger autoplan                                 |
+| `--apply-requirements`      |                                        | Apply requirements for all projects                                 |
+| `--tag-workflow`            |                                        | Map stack tags to workflows                                         |
+| `--tag-requirements`        |                                        | Map stack tags to apply requirements                                |
+| `--preserve-workflows`      | `false`                                | Keep existing workflow blocks from current atlantis.yaml            |
+| `--generate-workflows`      | `false`                                | Auto-generate workflow blocks wrapping terraform in `terramate run` |
+| `--workflow-terramate-wrap` | `true`                                 | Wrap terraform commands with `terramate run` in generated workflows |
 
 **CI modes**
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--changed` | `false` | Only include stacks changed vs base ref |
-| `--changed-base-ref` | `main` | Git ref to compare against for change detection |
-| `--check` | `false` | Exit non-zero if the output would change |
-| `--diff` | `false` | Print a unified diff of current vs generated output |
+| Flag                 | Default | Description                                         |
+| -------------------- | ------- | --------------------------------------------------- |
+| `--changed`          | `false` | Only include stacks changed vs base ref             |
+| `--changed-base-ref` | `main`  | Git ref to compare against for change detection     |
+| `--check`            | `false` | Exit non-zero if the output would change            |
+| `--diff`             | `false` | Print a unified diff of current vs generated output |
 
 ### Per-stack globals
 
 Set Terramate globals in any stack to override defaults for that project.
 
-| Global | Type | Description |
-|--------|------|-------------|
-| `atlantis_skip` | bool | Skip this stack entirely |
-| `atlantis_workflow` | string | Override workflow for this stack |
-| `atlantis_autoplan` | bool | Override autoplan enabled/disabled |
-| `atlantis_terraform_version` | string | Override Terraform version |
-| `atlantis_when_modified` | list(string) | Override when_modified patterns |
-| `atlantis_extra_deps` | list(string) | Additional when_modified entries merged with defaults |
-| `atlantis_apply_requirements` | list(string) | Override apply requirements |
+| Global                        | Type         | Description                                           |
+| ----------------------------- | ------------ | ----------------------------------------------------- |
+| `atlantis_skip`               | bool         | Skip this stack entirely                              |
+| `atlantis_workflow`           | string       | Override workflow for this stack                      |
+| `atlantis_autoplan`           | bool         | Override autoplan enabled/disabled                    |
+| `atlantis_terraform_version`  | string       | Override Terraform version                            |
+| `atlantis_when_modified`      | list(string) | Override when_modified patterns                       |
+| `atlantis_extra_deps`         | list(string) | Additional when_modified entries merged with defaults |
+| `atlantis_apply_requirements` | list(string) | Override apply requirements                           |
 
 ```hcl
 globals {
@@ -191,23 +194,25 @@ globals {
 
 Project names are derived from stack paths. Four strategies control the format:
 
-| Strategy | Behavior | Example (`stacks/aws/prod/eu-west-1/db/billing`) |
-|----------|----------|--------------------------------------------------|
-| `auto-strip` | Strips the longest common prefix across all stacks | `prod-eu-west-1-db-billing` |
-| `stack-name` | Uses the stack's `name` field with parent context | `eu-west-1-db-billing` |
-| `last-n` | Uses the last N path segments | `db-billing` (depth=2) |
-| `full` | Full path, no stripping | `stacks-aws-prod-eu-west-1-db-billing` |
+| Strategy     | Behavior                                           | Example (`stacks/aws/prod/eu-west-1/db/billing`) |
+| ------------ | -------------------------------------------------- | ------------------------------------------------ |
+| `auto-strip` | Strips the longest common prefix across all stacks | `prod-eu-west-1-db-billing`                      |
+| `stack-name` | Uses the stack's `name` field with parent context  | `eu-west-1-db-billing`                           |
+| `last-n`     | Uses the last N path segments                      | `db-billing` (depth=2)                           |
+| `full`       | Full path, no stripping                            | `stacks-aws-prod-eu-west-1-db-billing`           |
 
 If two stacks would produce the same name, the tool adds parent segments until names are unique.
 
 ## Recipes
 
 **Generate for changed stacks only:**
+
 ```sh
 terramate-atlantis-config generate --changed --changed-base-ref main --output atlantis.yaml
 ```
 
 **Short project names in CI (recommended for PR workflows):**
+
 ```yaml
 # .terramate-atlantis.yaml
 project_name_strategy: last-n
@@ -216,21 +221,25 @@ changed: true
 ```
 
 **Check atlantis.yaml is up to date in CI:**
+
 ```sh
 terramate-atlantis-config generate --output atlantis.yaml --check
 ```
 
 **Map tags to workflows:**
+
 ```sh
 terramate-atlantis-config generate --tag-workflow production=prod-wf,staging=staging-wf
 ```
 
 **Generate workflows wrapping terramate run:**
+
 ```sh
 terramate-atlantis-config generate --generate-workflows --output atlantis.yaml
 ```
 
 **Strip an explicit path prefix from project names:**
+
 ```sh
 terramate-atlantis-config generate --project-name-prefix "stacks/aws"
 ```
@@ -268,11 +277,11 @@ repos:
 Prerequisites: Go 1.25, managed via `mise.toml`.
 
 ```sh
-mise install          # install Go and tooling
+mise install          # install go and tooling
 make test             # run tests
 make lint             # run linters
 make build            # build binary
-make check            # full CI check (vet + fmt + test)
+make check            # full ci check (vet + fmt + test)
 make help             # list all targets
 ```
 
