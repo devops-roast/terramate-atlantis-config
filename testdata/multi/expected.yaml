@@ -8,22 +8,22 @@ projects:
     autoplan:
       enabled: true
       when_modified:
-        - "*.tf"
-        - "*.tf.json"
+        - '*.tf'
+        - '*.tf.json'
         - .terraform.lock.hcl
   - name: infra-rds
     dir: infra/rds
     autoplan:
       enabled: true
       when_modified:
-        - "*.tf"
-        - "*.tf.json"
+        - '*.tf'
+        - '*.tf.json'
         - .terraform.lock.hcl
   - name: infra-vpc
     dir: infra/vpc
     autoplan:
       enabled: true
       when_modified:
-        - "*.tf"
-        - "*.tf.json"
+        - '*.tf'
+        - '*.tf.json'
         - .terraform.lock.hcl
