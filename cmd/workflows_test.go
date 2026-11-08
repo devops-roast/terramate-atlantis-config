@@ -173,6 +173,20 @@ projects: []
 		assert.NotContains(t, res.stderr, `"terramate"`, "regenerating a preserved generated workflow is silent")
 	})
 
+	// The existing file holds the config workflows the previous run wrote;
+	// refreshing an identical copy must not warn on every run.
+	t.Run("preserve + config does not warn about its own previous output", func(t *testing.T) {
+		root, out := setup(t, config)
+
+		first := generateTo(t, root, out, "--preserve-workflows")
+		require.Equal(t, 0, first.code, first.stderr)
+		require.Contains(t, first.stderr, `"shared"`, "the hand-written existing copy differs and is reported")
+
+		second := generateTo(t, root, out, "--preserve-workflows")
+		require.Equal(t, 0, second.code, second.stderr)
+		assert.NotContains(t, second.stderr, "Warning:")
+	})
+
 	t.Run("preserve only keeps existing workflows", func(t *testing.T) {
 		root, out := setup(t, "")
 

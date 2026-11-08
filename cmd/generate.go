@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 
@@ -342,6 +343,12 @@ func buildWorkflows(opts *GenerateOptions, warnf func(string, ...any)) (map[stri
 		// Regenerating replaces the previously generated copy; that is the
 		// expected path and not worth a warning.
 		if o.Winner == atlantis.SourceGenerated && o.Replaced == atlantis.SourcePreserved {
+			continue
+		}
+		// With --preserve-workflows the existing file holds the config file
+		// workflows written by the previous run; replacing an identical copy
+		// is not an override.
+		if o.Replaced == atlantis.SourcePreserved && reflect.DeepEqual(preserved[o.Name], merged[o.Name]) {
 			continue
 		}
 		warnf("workflow %q from the %s overrides the one from the %s", o.Name, o.Winner, o.Replaced)

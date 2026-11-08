@@ -345,7 +345,7 @@ TM_DISABLE_SAFEGUARDS=git
 2. the generated `terramate` workflow (`--generate-workflows`), so a stale copy in the existing file is refreshed;
 3. workflows defined under `workflows:` in the config file, so you can replace the generated workflow by defining one with the same name.
 
-When a config file workflow overrides another one, a warning names it on stderr.
+When a config file workflow overrides a different definition of the same name, a warning names it on stderr. Refreshing an identical copy that the previous run wrote to the output file is silent.
 
 ## 💡 Recipes
 
