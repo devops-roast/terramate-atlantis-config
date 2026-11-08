@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/terramate-io/terramate/config"
 	"github.com/terramate-io/terramate/git"
@@ -370,44 +371,63 @@ func matchesPathOrParent(pattern, stackDir string) (bool, error) {
 
 // matchesPathFilter reports whether pattern matches stackDir itself.
 func matchesPathFilter(pattern, stackDir string) (bool, error) {
-	normalizedPattern := filepath.ToSlash(strings.TrimPrefix(pattern, "/"))
+	normalizedPattern := normalizePathPattern(pattern)
 	if normalizedPattern == "" {
 		return true, nil
 	}
 
 	normalizedDir := filepath.ToSlash(strings.TrimPrefix(stackDir, "/"))
-	if strings.HasSuffix(normalizedPattern, "/**") {
-		prefix := strings.TrimSuffix(normalizedPattern, "/**")
-		if normalizedDir == prefix {
-			return true, nil
-		}
-		return strings.HasPrefix(normalizedDir, prefix+"/"), nil
+	if !strings.Contains(normalizedPattern, "**") {
+		return path.Match(normalizedPattern, normalizedDir)
 	}
 
-	if strings.Contains(normalizedPattern, "**") {
-		re, err := regexp.Compile(globToRegexp(normalizedPattern))
-		if err != nil {
-			return false, err
-		}
-		return re.MatchString(normalizedDir), nil
+	expr, err := globToRegexp(normalizedPattern)
+	if err != nil {
+		return false, err
 	}
-
-	return path.Match(normalizedPattern, normalizedDir)
+	re, err := regexp.Compile(expr)
+	if err != nil {
+		return false, err
+	}
+	return re.MatchString(normalizedDir), nil
 }
 
-func globToRegexp(glob string) string {
+// normalizePathPattern makes a path filter relative to the project root and
+// drops redundant separators and "." segments, so "infra", "/infra",
+// "./infra" and "infra/" are the same filter. It returns "" (no filter) for
+// an empty pattern or "/". "." stays "." and matches the root stack.
+func normalizePathPattern(pattern string) string {
+	p := filepath.ToSlash(pattern)
+	if p == "" {
+		return ""
+	}
+	return strings.TrimPrefix(path.Clean(p), "/")
+}
+
+// globToRegexp translates a path glob containing "**" into a regular
+// expression. Everything except "**" follows path.Match: '*' and '?' stay
+// within one segment, '[...]' is a character class ('^' negates it) and '\\'
+// escapes the next character. "**" as a whole segment matches any number of
+// segments, including none: "**/vpc" matches "vpc", "a/**/b" matches "a/b"
+// and "a/**" matches "a". Elsewhere "**" matches any run of characters.
+func globToRegexp(glob string) (string, error) {
 	var b strings.Builder
-	b.WriteString("^")
+	b.WriteString("(?s)^")
 
 	for i := 0; i < len(glob); i++ {
-		ch := glob[i]
-		switch ch {
+		switch ch := glob[i]; ch {
+		case '/':
+			if glob[i:] == "/**" {
+				b.WriteString("(?:/.*)?")
+				i = len(glob)
+				continue
+			}
+			b.WriteByte('/')
 		case '*':
 			if i+1 < len(glob) && glob[i+1] == '*' {
 				i++
 				if i+1 < len(glob) && glob[i+1] == '/' {
-					// "**/" matches zero or more whole directories, so
-					// "**/vpc" matches "vpc" and "a/**/b" matches "a/b".
+					// "**/" matches zero or more whole directories.
 					b.WriteString("(?:.*/)?")
 					i++
 				} else {
@@ -418,14 +438,99 @@ func globToRegexp(glob string) string {
 			}
 		case '?':
 			b.WriteString("[^/]")
-		case '.', '+', '(', ')', '|', '^', '$', '{', '}', '[', ']', '\\':
-			b.WriteByte('\\')
-			b.WriteByte(ch)
+		case '[':
+			class, n, err := globClassToRegexp(glob[i:])
+			if err != nil {
+				return "", err
+			}
+			b.WriteString(class)
+			i += n - 1
+		case '\\':
+			if i+1 == len(glob) {
+				return "", path.ErrBadPattern
+			}
+			i++
+			fallthrough
 		default:
-			b.WriteByte(ch)
+			r, size := utf8.DecodeRuneInString(glob[i:])
+			b.WriteString(regexp.QuoteMeta(string(r)))
+			i += size - 1
 		}
 	}
 
 	b.WriteString("$")
-	return b.String()
+	return b.String(), nil
+}
+
+// globClassToRegexp translates the path.Match character class at the start
+// of glob ("[...]") into a regular expression and returns how many bytes of
+// glob it used. Malformed classes return path.ErrBadPattern, as path.Match
+// does.
+func globClassToRegexp(glob string) (expr string, n int, err error) {
+	rest := glob[1:]
+	negated := strings.HasPrefix(rest, "^")
+	if negated {
+		rest = rest[1:]
+	}
+
+	var ranges strings.Builder
+	count := 0
+	for {
+		if strings.HasPrefix(rest, "]") && count > 0 {
+			rest = rest[1:]
+			break
+		}
+		var lo, hi rune
+		if lo, rest, err = classChar(rest); err != nil {
+			return "", 0, err
+		}
+		hi = lo
+		if rest[0] == '-' {
+			if hi, rest, err = classChar(rest[1:]); err != nil {
+				return "", 0, err
+			}
+		}
+		// path.Match accepts an inverted range and never matches it;
+		// regexp would reject it.
+		if lo <= hi {
+			fmt.Fprintf(&ranges, `\x{%x}-\x{%x}`, lo, hi)
+		}
+		count++
+	}
+
+	used := len(glob) - len(rest)
+	switch {
+	// Like path.Match, a negated class also matches '/'.
+	case ranges.Len() == 0 && negated:
+		return `.`, used, nil
+	case ranges.Len() == 0:
+		return `[^\x{0}-\x{10ffff}]`, used, nil // matches nothing
+	case negated:
+		return `[^` + ranges.String() + `]`, used, nil
+	default:
+		return `[` + ranges.String() + `]`, used, nil
+	}
+}
+
+// classChar reads one (possibly escaped) character of a character class,
+// with path.Match's rules for what is malformed.
+func classChar(chunk string) (r rune, rest string, err error) {
+	if chunk == "" || chunk[0] == '-' || chunk[0] == ']' {
+		return 0, "", path.ErrBadPattern
+	}
+	if chunk[0] == '\\' {
+		chunk = chunk[1:]
+		if chunk == "" {
+			return 0, "", path.ErrBadPattern
+		}
+	}
+	r, size := utf8.DecodeRuneInString(chunk)
+	if r == utf8.RuneError && size == 1 {
+		return 0, "", path.ErrBadPattern
+	}
+	rest = chunk[size:]
+	if rest == "" {
+		return 0, "", path.ErrBadPattern
+	}
+	return r, rest, nil
 }
