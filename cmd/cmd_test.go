@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"testing"
 
@@ -487,4 +488,30 @@ func TestUnknownAtlantisGlobalWarns(t *testing.T) {
 	assert.Contains(t, res.stderr, `unknown global "atlantis_workflows" (stacks: stacks/dev, stacks/prod) is ignored`)
 	assert.Contains(t, res.stderr, "known atlantis globals: atlantis_apply_requirements,")
 	assert.NotContains(t, res.stdout, "Warning", "warnings never mix with the generated config")
+}
+
+// `go install module@vX.Y.Z` builds have no -ldflags; the version must come
+// from the embedded build information instead of printing "dev".
+func TestVersionInfoFallsBackToBuildInfo(t *testing.T) {
+	info := &debug.BuildInfo{
+		Main: debug.Module{Version: "v1.2.0"},
+		Settings: []debug.BuildSetting{
+			{Key: "vcs.revision", Value: "abc123"},
+			{Key: "vcs.time", Value: "2026-11-08T00:00:00Z"},
+		},
+	}
+	version, commit, date := versionInfo(info)
+	assert.Equal(t, []string{"v1.2.0", "abc123", "2026-11-08T00:00:00Z"}, []string{version, commit, date})
+
+	// A local build without a module version keeps "dev".
+	version, _, _ = versionInfo(&debug.BuildInfo{Main: debug.Module{Version: "(devel)"}})
+	assert.Equal(t, "dev", version)
+	version, commit, date = versionInfo(nil)
+	assert.Equal(t, []string{"dev", "unknown", "unknown"}, []string{version, commit, date})
+
+	// Values set with -ldflags win.
+	defer func(v, c, d string) { Version, Commit, BuildDate = v, c, d }(Version, Commit, BuildDate)
+	Version, Commit, BuildDate = "1.3.0", "def456", "today"
+	version, commit, date = versionInfo(info)
+	assert.Equal(t, []string{"1.3.0", "def456", "today"}, []string{version, commit, date})
 }
