@@ -1,4 +1,38 @@
-ARG ATLANTIS_IMAGE=ghcr.io/runatlantis/atlantis:latest
-FROM ${ATLANTIS_IMAGE}
+# Atlantis image used by the E2E suite.
+#
+# The Atlantis version is pinned (and bumped by Dependabot) so the suite is
+# reproducible. Since Atlantis v0.49 the image no longer ships a terraform
+# binary, so a pinned terraform and terramate CLI are baked in here.
+FROM ghcr.io/runatlantis/atlantis:v0.49.0
+
+ARG TERRAFORM_VERSION=1.17.1
+ARG TERRAMATE_VERSION=0.17.3
+ARG TARGETARCH
+
+USER root
+
+RUN set -eux; \
+	arch="${TARGETARCH:-amd64}"; \
+	case "$arch" in \
+		amd64) tm_arch=x86_64 ;; \
+		arm64) tm_arch=arm64 ;; \
+		*) echo "unsupported arch: $arch" >&2; exit 1 ;; \
+	esac; \
+	tmp="$(mktemp -d)"; \
+	cd "$tmp"; \
+	curl -fsSLO "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_${arch}.zip"; \
+	curl -fsSLO "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_SHA256SUMS"; \
+	grep " terraform_${TERRAFORM_VERSION}_linux_${arch}.zip\$" "terraform_${TERRAFORM_VERSION}_SHA256SUMS" | sha256sum -c -; \
+	unzip -q "terraform_${TERRAFORM_VERSION}_linux_${arch}.zip" terraform -d /usr/local/bin; \
+	curl -fsSLO "https://github.com/terramate-io/terramate/releases/download/v${TERRAMATE_VERSION}/terramate_${TERRAMATE_VERSION}_linux_${tm_arch}.tar.gz"; \
+	curl -fsSLO "https://github.com/terramate-io/terramate/releases/download/v${TERRAMATE_VERSION}/checksums.txt"; \
+	grep " terramate_${TERRAMATE_VERSION}_linux_${tm_arch}.tar.gz\$" checksums.txt | sha256sum -c -; \
+	tar -xzf "terramate_${TERRAMATE_VERSION}_linux_${tm_arch}.tar.gz" -C /usr/local/bin terramate; \
+	cd /; \
+	rm -rf "$tmp"; \
+	terraform version; \
+	terramate version
 
 COPY bin/terramate-atlantis-config /usr/local/bin/terramate-atlantis-config
+
+USER atlantis
