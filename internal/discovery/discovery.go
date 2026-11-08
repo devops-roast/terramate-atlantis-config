@@ -189,6 +189,21 @@ func Discover(opts DiscoverOptions) (Result, error) {
 			}
 		}
 
+		// Exclusions apply before anything about the stack is evaluated, so
+		// an excluded stack can't fail the run (e.g. with invalid globals).
+		if _, excluded := excludedPaths[stackDir]; excluded {
+			continue
+		}
+		if opts.ExcludePath != "" {
+			matched, err := matchesPathOrParent(opts.ExcludePath, stackDir)
+			if err != nil {
+				return Result{}, fmt.Errorf("matching exclude path filter %q for stack %q: %w", opts.ExcludePath, stackDir, err)
+			}
+			if matched {
+				continue
+			}
+		}
+
 		stored := overridesByDir[stackDir]
 		if stored.err != nil {
 			return Result{}, stored.err
@@ -222,28 +237,6 @@ func Discover(opts DiscoverOptions) (Result, error) {
 			WhenModified:      cloneKeepingNil(overrides.WhenModified),
 			ApplyRequirements: cloneKeepingNil(overrides.ApplyRequirements),
 		})
-	}
-
-	if opts.ExcludeTags != "" || opts.ExcludePath != "" {
-		filtered := make([]StackInfo, 0, len(discovered))
-		for _, stack := range discovered {
-			if _, excluded := excludedPaths[stack.Dir]; excluded {
-				continue
-			}
-
-			if opts.ExcludePath != "" {
-				matched, err := matchesPathOrParent(opts.ExcludePath, stack.Dir)
-				if err != nil {
-					return Result{}, fmt.Errorf("matching exclude path filter %q for stack %q: %w", opts.ExcludePath, stack.Dir, err)
-				}
-				if matched {
-					continue
-				}
-			}
-
-			filtered = append(filtered, stack)
-		}
-		discovered = filtered
 	}
 
 	sort.Slice(discovered, func(i, j int) bool {
