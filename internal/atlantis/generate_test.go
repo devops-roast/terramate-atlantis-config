@@ -1,6 +1,7 @@
 package atlantis
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"reflect"
@@ -464,7 +465,8 @@ func TestMarshalJSON(t *testing.T) {
       }
     }
   ]
-}`
+}
+`
 
 	if string(got) != want {
 		t.Fatalf("unexpected json:\n%s\nwant:\n%s", string(got), want)
@@ -1182,5 +1184,24 @@ func TestGenerateEmptyWhenModifiedOverride(t *testing.T) {
 	}
 	if !strings.Contains(string(out), `"when_modified": []`) {
 		t.Fatalf("JSON must render an empty list, not null:\n%s", out)
+	}
+}
+
+func TestMarshalOutputEndsWithSingleNewline(t *testing.T) {
+	t.Parallel()
+
+	cfg := mustGenerate(t, []discovery.StackInfo{{Dir: "a"}}, Options{CreateProjectName: true})
+	jsonOut, err := MarshalJSON(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	yamlOut, err := MarshalYAML(cfg, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, out := range map[string][]byte{"json": jsonOut, "yaml": yamlOut} {
+		if !bytes.HasSuffix(out, []byte("\n")) || bytes.HasSuffix(out, []byte("\n\n")) {
+			t.Errorf("%s output must end with exactly one newline: %q", name, out[max(0, len(out)-10):])
+		}
 	}
 }

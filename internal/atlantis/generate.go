@@ -239,8 +239,16 @@ func MarshalYAML(cfg Config, addHeader bool) ([]byte, error) {
 	return append([]byte(header), marshaled...), nil
 }
 
+// MarshalJSON marshals an Atlantis Config into indented JSON. Like the YAML
+// output it ends with a newline, so end-of-file fixers (e.g. the pre-commit
+// end-of-file-fixer hook) leave a generated file unchanged and --check keeps
+// passing.
 func MarshalJSON(cfg Config) ([]byte, error) {
-	return json.MarshalIndent(cfg, "", "  ")
+	out, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return append(out, '\n'), nil
 }
 
 // copyToPtr returns a pointer to a non-nil copy of s.
