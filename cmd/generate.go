@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -53,74 +54,118 @@ type GenerateOptions struct {
 	ConfigWorkflows       map[string]interface{}
 }
 
-var opts GenerateOptions
+const stdoutOutput = "-"
 
-var generateCmd = &cobra.Command{
-	Use:   "generate",
-	Short: "Generate atlantis.yaml from Terramate stacks",
-	Long: `Discovers all Terramate stacks in the repository and generates
+var (
+	validFormats        = []string{"yaml", "json"}
+	validSortBy         = []string{"dir", "name", "execution_order_group"}
+	validNameStrategies = []string{
+		atlantis.NameStrategyAutoStrip,
+		atlantis.NameStrategyStackName,
+		atlantis.NameStrategyLastN,
+		atlantis.NameStrategyFull,
+	}
+)
+
+func newGenerateCmd() *cobra.Command {
+	opts := &GenerateOptions{}
+
+	generateCmd := &cobra.Command{
+		Use:   "generate",
+		Short: "Generate atlantis.yaml from Terramate stacks",
+		Long: `Discovers all Terramate stacks in the repository and generates
 an atlantis.yaml configuration file. Per-stack customization is
 supported via Terramate globals (atlantis_skip, atlantis_workflow, etc).`,
-	RunE: runGenerate,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runGenerate(cmd, opts)
+		},
+	}
+
+	flags := generateCmd.Flags()
+	flags.StringVar(&opts.Root, "root", ".", "Path to the root directory of the Terramate project")
+	flags.StringVar(&opts.Output, "output", "", "Output file path (default: stdout)")
+	flags.StringVar(&opts.Config, "config", "", "Path to configuration file (default: .terramate-atlantis.yaml in root)")
+	flags.BoolVar(&opts.Autoplan, "autoplan", true, "Enable autoplan for all projects")
+	flags.BoolVar(&opts.Parallel, "parallel", true, "Enable parallel plan and apply")
+	flags.BoolVar(&opts.Automerge, "automerge", false, "Enable automerge")
+	flags.StringVar(&opts.Workflow, "workflow", "", "Default workflow name for all projects")
+	flags.StringVar(&opts.TerraformVersion, "terraform-version", "", "Default terraform version for all projects")
+	flags.StringVar(&opts.Filter, "filter", "", "Filter stacks by tags (Terramate tag filter syntax)")
+	flags.StringVar(&opts.FilterPath, "filter-path", "", "Filter stacks by directory path glob")
+	flags.StringVar(&opts.ExcludeTags, "exclude-tags", "", "Exclude stacks by tags (Terramate tag filter syntax)")
+	flags.StringVar(&opts.ExcludePath, "exclude-path", "", "Exclude stacks by directory path glob")
+	flags.BoolVar(&opts.Changed, "changed", false, "Only include stacks changed from the base ref")
+	flags.StringVar(&opts.ChangedBaseRef, "changed-base-ref", "main", "Base git ref for --changed stack detection")
+	flags.BoolVar(&opts.CreateProjectName, "create-project-name", true, "Generate project names from stack paths")
+	flags.BoolVar(&opts.CreateWorkspace, "create-workspace", false, "Generate workspace values from stack paths")
+	flags.BoolVar(&opts.PreserveWorkflows, "preserve-workflows", false, "Preserve workflows from an existing output file")
+	flags.BoolVar(&opts.GenerateWorkflows, "generate-workflows", false, "Generate default Atlantis workflows that run via terramate")
+	flags.BoolVar(&opts.WorkflowTerramateWrap, "workflow-terramate-wrap", true, "Wrap generated workflow terraform commands with terramate run --")
+	flags.BoolVar(&opts.Diff, "diff", false, "Print a unified diff between the existing output file and generated content; exits 1 on changes")
+	flags.BoolVar(&opts.Check, "check", false, "Exit 1 if the output file differs from generated content; combine with --diff to show the changes")
+	flags.StringVar(&opts.SortBy, "sort-by", "dir", "Project sort order: "+strings.Join(validSortBy, ", "))
+	flags.BoolVar(&opts.NoHeader, "no-header", false, "Suppress generated file header comment")
+	flags.StringVar(&opts.Format, "format", "yaml", "Output format: "+strings.Join(validFormats, ", "))
+	flags.BoolVar(&opts.ExecutionOrderGroups, "execution-order-groups", false, "Populate execution_order_group based on stack dependencies")
+	flags.BoolVar(&opts.DependsOn, "depends-on", false, "Populate depends_on from stack after/before dependencies")
+	flags.StringVar(&opts.ProjectNameStrategy, "project-name-strategy", atlantis.NameStrategyAutoStrip, "Naming strategy: "+strings.Join(validNameStrategies, ", "))
+	flags.StringVar(&opts.ProjectNamePrefix, "project-name-prefix", "", "Strip this prefix from stack paths when generating names")
+	flags.IntVar(&opts.ProjectNameDepth, "project-name-depth", 3, "Number of trailing path segments for last-n strategy")
+	flags.StringSliceVar(&opts.WhenModified, "when-modified", []string{"*.tf", "*.tf.json", ".terraform.lock.hcl"}, "Default when_modified patterns")
+	flags.StringSliceVar(&opts.ApplyRequirements, "apply-requirements", nil, "Default apply_requirements entries")
+	flags.StringSliceVar(&opts.TagWorkflow, "tag-workflow", nil, "Tag to workflow mapping (format: tag=workflow; comma-separated or repeated)")
+	flags.StringArrayVar(&opts.TagRequirements, "tag-requirements", nil, "Tag to requirements mapping (format: tag=req1,req2; repeat the flag for more tags)")
+
+	return generateCmd
 }
 
-func init() {
-	rootCmd.AddCommand(generateCmd)
-
-	generateCmd.Flags().StringVar(&opts.Root, "root", ".", "Path to the root directory of the Terramate project")
-	generateCmd.Flags().StringVar(&opts.Output, "output", "", "Output file path (default: stdout)")
-	generateCmd.Flags().StringVar(&opts.Config, "config", "", "Path to configuration file (default: .terramate-atlantis.yaml in root)")
-	generateCmd.Flags().BoolVar(&opts.Autoplan, "autoplan", true, "Enable autoplan for all projects")
-	generateCmd.Flags().BoolVar(&opts.Parallel, "parallel", true, "Enable parallel plan and apply")
-	generateCmd.Flags().BoolVar(&opts.Automerge, "automerge", false, "Enable automerge")
-	generateCmd.Flags().StringVar(&opts.Workflow, "workflow", "", "Default workflow name for all projects")
-	generateCmd.Flags().StringVar(&opts.TerraformVersion, "terraform-version", "", "Default terraform version for all projects")
-	generateCmd.Flags().StringVar(&opts.Filter, "filter", "", "Filter stacks by tags (Terramate tag filter syntax)")
-	generateCmd.Flags().StringVar(&opts.FilterPath, "filter-path", "", "Filter stacks by directory path glob")
-	generateCmd.Flags().StringVar(&opts.ExcludeTags, "exclude-tags", "", "Exclude stacks by tags (Terramate tag filter syntax)")
-	generateCmd.Flags().StringVar(&opts.ExcludePath, "exclude-path", "", "Exclude stacks by directory path glob")
-	generateCmd.Flags().BoolVar(&opts.Changed, "changed", false, "Only include stacks changed from the base ref")
-	generateCmd.Flags().StringVar(&opts.ChangedBaseRef, "changed-base-ref", "main", "Base git ref for --changed stack detection")
-	generateCmd.Flags().BoolVar(&opts.CreateProjectName, "create-project-name", true, "Generate project names from stack paths")
-	generateCmd.Flags().BoolVar(&opts.CreateWorkspace, "create-workspace", false, "Generate workspace values from stack paths")
-	generateCmd.Flags().BoolVar(&opts.PreserveWorkflows, "preserve-workflows", false, "Preserve workflows from an existing output file")
-	generateCmd.Flags().BoolVar(&opts.GenerateWorkflows, "generate-workflows", false, "Generate default Atlantis workflows that run via terramate")
-	generateCmd.Flags().BoolVar(&opts.WorkflowTerramateWrap, "workflow-terramate-wrap", true, "Wrap generated workflow terraform commands with terramate run --")
-	generateCmd.Flags().BoolVar(&opts.Diff, "diff", false, "Print diff between existing output file and generated content")
-	generateCmd.Flags().BoolVar(&opts.Check, "check", false, "Fail if output file differs from generated content")
-	generateCmd.Flags().StringVar(&opts.SortBy, "sort-by", "dir", "Project sort order: dir, name, execution_order_group")
-	generateCmd.Flags().BoolVar(&opts.NoHeader, "no-header", false, "Suppress generated file header comment")
-	generateCmd.Flags().StringVar(&opts.Format, "format", "yaml", "Output format: yaml or json")
-	generateCmd.Flags().BoolVar(&opts.ExecutionOrderGroups, "execution-order-groups", false, "Populate execution_order_group based on stack dependencies")
-	generateCmd.Flags().BoolVar(&opts.DependsOn, "depends-on", false, "Populate depends_on from stack after/before dependencies")
-	generateCmd.Flags().StringVar(&opts.ProjectNameStrategy, "project-name-strategy", "auto-strip", "Naming strategy: auto-strip, stack-name, last-n, full")
-	generateCmd.Flags().StringVar(&opts.ProjectNamePrefix, "project-name-prefix", "", "Strip this prefix from stack paths when generating names")
-	generateCmd.Flags().IntVar(&opts.ProjectNameDepth, "project-name-depth", 3, "Number of trailing path segments for last-n strategy")
-	generateCmd.Flags().StringSliceVar(&opts.WhenModified, "when-modified", []string{"*.tf", "*.tf.json", ".terraform.lock.hcl"}, "Default when_modified patterns")
-	generateCmd.Flags().StringSliceVar(&opts.ApplyRequirements, "apply-requirements", nil, "Default apply_requirements entries")
-	generateCmd.Flags().StringSliceVar(&opts.TagWorkflow, "tag-workflow", nil, "Tag to workflow mapping (format: tag=workflow)")
-	generateCmd.Flags().StringSliceVar(&opts.TagRequirements, "tag-requirements", nil, "Tag to requirements mapping (format: tag=req1,req2)")
+// validateGenerateOptions checks option values after flags and the config
+// file have been merged, so values coming from either source are validated.
+func validateGenerateOptions(opts *GenerateOptions) error {
+	if !contains(validFormats, opts.Format) {
+		return fmt.Errorf("invalid format %q, expected one of: %s", opts.Format, strings.Join(validFormats, ", "))
+	}
+	if !contains(validSortBy, opts.SortBy) {
+		return fmt.Errorf("invalid sort-by %q, expected one of: %s", opts.SortBy, strings.Join(validSortBy, ", "))
+	}
+	if !contains(validNameStrategies, opts.ProjectNameStrategy) {
+		return fmt.Errorf("invalid project-name-strategy %q, expected one of: %s",
+			opts.ProjectNameStrategy, strings.Join(validNameStrategies, ", "))
+	}
+	if (opts.Check || opts.Diff) && writesToStdout(opts.Output) {
+		return fmt.Errorf("--check and --diff require an output file (set --output or 'output' in the config file)")
+	}
+	return nil
 }
 
-func runGenerate(cmd *cobra.Command, args []string) error {
-	if opts.Check && opts.Diff {
-		return fmt.Errorf("--check and --diff are mutually exclusive")
+func contains(values []string, value string) bool {
+	for _, v := range values {
+		if v == value {
+			return true
+		}
 	}
+	return false
+}
 
-	if (opts.Check || opts.Diff) && (opts.Output == "" || opts.Output == "-") {
-		return fmt.Errorf("--check and --diff require --output")
-	}
+func writesToStdout(output string) bool {
+	return output == "" || output == stdoutOutput
+}
 
-	if opts.Format != "yaml" && opts.Format != "json" {
-		return fmt.Errorf("invalid --format %q, expected yaml or json", opts.Format)
-	}
+func runGenerate(cmd *cobra.Command, opts *GenerateOptions) error {
+	stdout := cmd.OutOrStdout()
+	stderr := cmd.ErrOrStderr()
 
 	fileCfg, err := loadFileConfig(opts.Root, opts.Config)
 	if err != nil {
 		return fmt.Errorf("loading config file: %w", err)
 	}
 
-	if err := mergeConfig(cmd, &opts, fileCfg); err != nil {
+	if err := mergeConfig(cmd, opts, fileCfg); err != nil {
+		return err
+	}
+
+	if err := validateGenerateOptions(opts); err != nil {
 		return err
 	}
 
@@ -167,7 +212,7 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 		ProjectNameDepth:     opts.ProjectNameDepth,
 		NamingStacks:         discovered.AllStacks,
 		Warnf: func(format string, args ...any) {
-			fmt.Fprintf(os.Stderr, "Warning: "+format+"\n", args...)
+			fmt.Fprintf(stderr, "Warning: "+format+"\n", args...)
 		},
 	})
 	if err != nil {
@@ -194,7 +239,7 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	if opts.PreserveWorkflows && opts.Output != "" && opts.Output != "-" {
+	if opts.PreserveWorkflows && !writesToStdout(opts.Output) {
 		existing, readErr := os.ReadFile(opts.Output)
 		if readErr == nil {
 			if err := atlantis.PreserveWorkflows(existing, &cfg); err != nil {
@@ -216,50 +261,55 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("marshaling config: %w", err)
 	}
 
-	if opts.Diff {
-		existing, readErr := os.ReadFile(opts.Output)
-		if readErr != nil && !os.IsNotExist(readErr) {
-			return fmt.Errorf("reading existing output file: %w", readErr)
-		}
-
-		diff, hasChanges := atlantis.Diff(existing, output, filepath.Base(opts.Output))
-		if hasChanges {
-			fmt.Print(diff)
-			return &ExitError{Code: 1}
-		}
-		return nil
+	if opts.Check || opts.Diff {
+		return compareWithExisting(stdout, stderr, opts, output)
 	}
 
-	if opts.Check {
-		existing, readErr := os.ReadFile(opts.Output)
-		if readErr != nil {
-			if os.IsNotExist(readErr) {
-				fmt.Fprintln(os.Stderr, "atlantis.yaml is out of date, run 'terramate-atlantis-config generate' to update")
-				return &ExitError{Code: 1}
-			}
-			return fmt.Errorf("reading existing output file: %w", readErr)
-		}
-
-		if bytes.Equal(existing, output) {
-			fmt.Fprintln(os.Stderr, "atlantis.yaml is up to date")
-			return nil
-		}
-
-		fmt.Fprintln(os.Stderr, "atlantis.yaml is out of date, run 'terramate-atlantis-config generate' to update")
-		return &ExitError{Code: 1}
-	}
-
-	if opts.Output == "" || opts.Output == "-" {
-		fmt.Print(string(output))
-		return nil
+	if writesToStdout(opts.Output) {
+		_, err := stdout.Write(output)
+		return err
 	}
 
 	if err := os.WriteFile(opts.Output, output, 0o644); err != nil {
 		return fmt.Errorf("writing output file: %w", err)
 	}
 
-	fmt.Fprintf(os.Stderr, "Generated %s with %d projects\n", opts.Output, len(cfg.Projects))
+	fmt.Fprintf(stderr, "Generated %s with %d projects\n", opts.Output, len(cfg.Projects))
 	return nil
+}
+
+// compareWithExisting implements --check and --diff. --diff prints a unified
+// diff to stdout; --check prints a status line to stderr. Either one exits 1
+// when the existing file is stale or missing.
+func compareWithExisting(stdout, stderr io.Writer, opts *GenerateOptions, generated []byte) error {
+	existing, readErr := os.ReadFile(opts.Output)
+	if readErr != nil && !os.IsNotExist(readErr) {
+		return fmt.Errorf("reading existing output file: %w", readErr)
+	}
+	missing := os.IsNotExist(readErr)
+
+	if !missing && bytes.Equal(existing, generated) {
+		if opts.Check {
+			fmt.Fprintf(stderr, "%s is up to date\n", opts.Output)
+		}
+		return nil
+	}
+
+	if opts.Diff {
+		diff, _ := atlantis.Diff(existing, generated, filepath.Base(opts.Output))
+		fmt.Fprint(stdout, diff)
+	}
+
+	if opts.Check {
+		state := "is out of date"
+		if missing {
+			state = "does not exist"
+		}
+		fmt.Fprintf(stderr, "%s %s, run 'terramate-atlantis-config generate --output %s' to update\n",
+			opts.Output, state, opts.Output)
+	}
+
+	return &ExitError{Code: 1}
 }
 
 func parseTagWorkflows(entries []string) (map[string]string, error) {

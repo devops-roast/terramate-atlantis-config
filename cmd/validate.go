@@ -10,15 +10,13 @@ import (
 	"github.com/devops-roast/terramate-atlantis-config/internal/atlantis"
 )
 
-var validateCmd = &cobra.Command{
-	Use:   "validate [file]",
-	Short: "Validate an atlantis.yaml file",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runValidate,
-}
-
-func init() {
-	rootCmd.AddCommand(validateCmd)
+func newValidateCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "validate [file]",
+		Short: "Validate an atlantis.yaml file",
+		Args:  cobra.ExactArgs(1),
+		RunE:  runValidate,
+	}
 }
 
 func runValidate(cmd *cobra.Command, args []string) error {
@@ -35,12 +33,12 @@ func runValidate(cmd *cobra.Command, args []string) error {
 	errors := validateConfig(cfg)
 	if len(errors) > 0 {
 		for _, validationErr := range errors {
-			fmt.Fprintln(os.Stderr, validationErr)
+			fmt.Fprintln(cmd.ErrOrStderr(), validationErr)
 		}
 		return &ExitError{Code: 1}
 	}
 
-	fmt.Fprintln(os.Stdout, "atlantis.yaml is valid")
+	fmt.Fprintf(cmd.OutOrStdout(), "%s is valid\n", args[0])
 	return nil
 }
 

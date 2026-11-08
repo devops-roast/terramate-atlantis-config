@@ -122,13 +122,16 @@ workflows:
 
 **Output**
 
-| Flag          | Default | Description                          |
-| ------------- | ------- | ------------------------------------ |
-| `--root`      | `.`     | Root directory to search for stacks  |
-| `--output`    | stdout  | Output file path                     |
-| `--format`    | `yaml`  | Output format: `yaml` or `json`      |
-| `--no-header` | `false` | Omit the generated-by header comment |
-| `--config`    |         | Path to config file                  |
+| Flag          | Default | Description                                                                         |
+| ------------- | ------- | ----------------------------------------------------------------------------------- |
+| `--root`      | `.`     | Root directory to search for stacks                                                 |
+| `--output`    | stdout  | Output file path                                                                    |
+| `--format`    | `yaml`  | Output format: `yaml` or `json`                                                     |
+| `--no-header` | `false` | Omit the generated-by header comment                                                |
+| `--config`    |         | Path to config file                                                                 |
+| `--log-level` | `warn`  | Terramate SDK log level: `trace`, `debug`, `info`, `warn`, `error`, `disabled`      |
+
+Logs go to stderr and never mix with the generated config on stdout.
 
 **Filtering**
 
@@ -148,7 +151,7 @@ workflows:
 | `--project-name-prefix`   |              | Strip this prefix from stack paths when generating names      |
 | `--project-name-depth`    | `3`          | Number of trailing path segments for `last-n` strategy        |
 | `--create-workspace`      | `false`      | Set workspace from stack path                                 |
-| `--sort-by`               | `dir`        | Sort projects by this field                                   |
+| `--sort-by`               | `dir`        | Sort projects by `dir`, `name` or `execution_order_group`     |
 
 **Dependencies**
 
@@ -170,20 +173,22 @@ See [Dependencies](#dependencies) for how `after`/`before` are resolved.
 | `--terraform-version`       |                                        | Default Terraform version for all projects                          |
 | `--when-modified`           | `*.tf, *.tf.json, .terraform.lock.hcl` | File patterns that trigger autoplan                                 |
 | `--apply-requirements`      |                                        | Apply requirements for all projects                                 |
-| `--tag-workflow`            |                                        | Map stack tags to workflows                                         |
-| `--tag-requirements`        |                                        | Map stack tags to apply requirements                                |
+| `--tag-workflow`            |                                        | Map stack tags to workflows: `tag=workflow`, comma-separated        |
+| `--tag-requirements`        |                                        | Map a stack tag to apply requirements: `tag=req1,req2`, repeatable  |
 | `--preserve-workflows`      | `false`                                | Keep existing workflow blocks from current atlantis.yaml            |
 | `--generate-workflows`      | `false`                                | Auto-generate workflow blocks wrapping terraform in `terramate run` |
 | `--workflow-terramate-wrap` | `true`                                 | Wrap terraform commands with `terramate run` in generated workflows |
 
 **CI modes**
 
-| Flag                 | Default | Description                                         |
-| -------------------- | ------- | --------------------------------------------------- |
-| `--changed`          | `false` | Only include stacks changed vs base ref             |
-| `--changed-base-ref` | `main`  | Git ref to compare against for change detection     |
-| `--check`            | `false` | Exit non-zero if the output would change            |
-| `--diff`             | `false` | Print a unified diff of current vs generated output |
+| Flag                 | Default | Description                                                          |
+| -------------------- | ------- | -------------------------------------------------------------------- |
+| `--changed`          | `false` | Only include stacks changed vs base ref                              |
+| `--changed-base-ref` | `main`  | Git ref to compare against for change detection                      |
+| `--check`            | `false` | Exit 1 if the output file is missing or would change                 |
+| `--diff`             | `false` | Print a unified diff of current vs generated output; exit 1 if any   |
+
+`--check` and `--diff` compare against the output file, so they need `--output` (or `output` in the config file). They never write the file. Exit code `0` means up to date, `1` means stale or failed.
 
 ### Per-stack globals
 
@@ -278,12 +283,24 @@ terramate-atlantis-config generate --output atlantis.yaml --check
 ```
 
 > [!TIP]
-> Combine `--check` with `--diff` to see exactly what changed when the check fails.
+> Combine `--check` with `--diff` to see exactly what changed when the check fails:
+>
+> ```sh
+> terramate-atlantis-config generate --output atlantis.yaml --check --diff
+> ```
 
 **Map tags to workflows:**
 
 ```sh
 terramate-atlantis-config generate --tag-workflow production=prod-wf,staging=staging-wf
+```
+
+**Map tags to apply requirements** (repeat the flag for each tag):
+
+```sh
+terramate-atlantis-config generate \
+  --tag-requirements production=approved,mergeable \
+  --tag-requirements staging=mergeable
 ```
 
 **Generate workflows wrapping terramate run:**
