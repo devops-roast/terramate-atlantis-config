@@ -158,7 +158,7 @@ func TestProjectNamesAreUniqueAcrossStrategies(t *testing.T) {
 	}
 }
 
-func TestProjectNamesStableWithNamingStacks(t *testing.T) {
+func TestProjectNamesStableWithAllStacks(t *testing.T) {
 	t.Parallel()
 
 	all := []discovery.StackInfo{
@@ -173,7 +173,7 @@ func TestProjectNamesStableWithNamingStacks(t *testing.T) {
 		t.Run(strategy, func(t *testing.T) {
 			t.Parallel()
 
-			opts := Options{CreateProjectName: true, ProjectNameStrategy: strategy, ProjectNameDepth: 1, NamingStacks: all}
+			opts := Options{CreateProjectName: true, ProjectNameStrategy: strategy, ProjectNameDepth: 1, AllStacks: all}
 			full := namesByDirOf(mustGenerate(t, all, opts))
 
 			for i := range all[:4] {
@@ -189,13 +189,13 @@ func TestProjectNamesStableWithNamingStacks(t *testing.T) {
 		})
 	}
 
-	// Without NamingStacks the lone stack is named from its full path,
-	// which is exactly the instability NamingStacks fixes.
+	// Without AllStacks the lone stack is named from its full path,
+	// which is exactly the instability AllStacks fixes.
 	alone := mustGenerate(t, all[2:3], Options{CreateProjectName: true})
 	if alone.Projects[0].Name != "stacks-aws-acme-development-eu-west-1-acm" {
 		t.Fatalf("unexpected lone stack name: %q", alone.Projects[0].Name)
 	}
-	withCtx := mustGenerate(t, all[2:3], Options{CreateProjectName: true, NamingStacks: all})
+	withCtx := mustGenerate(t, all[2:3], Options{CreateProjectName: true, AllStacks: all})
 	if withCtx.Projects[0].Name != "acme-development-eu-west-1-acm" {
 		t.Fatalf("unexpected name with naming context: %q", withCtx.Projects[0].Name)
 	}
@@ -210,7 +210,7 @@ func TestSkippedStacksDoNotAffectNames(t *testing.T) {
 		{Dir: "stacks/aws/dev/vpc"},
 	}
 
-	cfg := mustGenerate(t, stacks, Options{CreateProjectName: true, NamingStacks: stacks})
+	cfg := mustGenerate(t, stacks, Options{CreateProjectName: true, AllStacks: stacks})
 	got := projectNames(cfg)
 	want := []string{"dev-vpc", "prod-vpc"}
 	if !reflect.DeepEqual(got, want) {

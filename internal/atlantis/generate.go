@@ -41,12 +41,14 @@ type Options struct {
 	ProjectNamePrefix    string // explicit prefix to strip (used with any strategy)
 	ProjectNameDepth     int    // number of trailing path segments to use (for last-n)
 
-	// NamingStacks is the set of stacks project names are computed against,
-	// usually every stack in the repository. Naming against the full set keeps
-	// a stack's name the same no matter which filters (--changed, --filter,
-	// --filter-path, --exclude-*) selected it. Defaults to the stacks passed
-	// to Generate.
-	NamingStacks []discovery.StackInfo
+	// AllStacks is every stack in the repository, whatever the filters
+	// (--changed, --filter, --filter-path, --exclude-*) selected:
+	//   - project names are computed against it (minus skipped stacks), so a
+	//     stack keeps its name no matter which stacks a run selected;
+	//   - ordering is followed through its stacks, so when a runs after m and
+	//     m after z, a still runs after z if m is filtered out or skipped.
+	// Defaults to the stacks passed to Generate.
+	AllStacks []discovery.StackInfo
 
 	// Warnf receives non-fatal warnings, such as dependency cycles.
 	// A nil Warnf discards them.
@@ -76,7 +78,7 @@ func Generate(stacks []discovery.StackInfo, opts Options) (Config, error) {
 	projects := make([]Project, 0, len(includedStacks))
 	projectByDir := make(map[string]*Project, len(includedStacks))
 
-	namer := newProjectNamer(namingContext(stacks, opts.NamingStacks), opts)
+	namer := newProjectNamer(namingContext(stacks, opts.AllStacks), opts)
 
 	for _, stack := range includedStacks {
 		dir := stackDir(stack.Dir)
@@ -143,7 +145,7 @@ func Generate(stacks []discovery.StackInfo, opts Options) (Config, error) {
 	}
 
 	if opts.ExecutionOrderGroups || opts.DependsOn {
-		dependencies := buildDependencies(includedStacks, projectByDir)
+		dependencies := buildDependencies(stacks, opts.AllStacks, projectByDir)
 		groups, cyclic := computeExecutionOrderGroups(dependencies)
 		if len(cyclic) > 0 {
 			opts.warnf(
@@ -286,33 +288,53 @@ func requirementsFromTags(tags []string, mapping map[string][]string) ([]string,
 
 // buildDependencies returns, for every project dir, the set of project dirs
 // it must run after. It uses the stack.after/stack.before entries already
-// resolved by discovery (AfterDirs/BeforeDirs); dependencies on stacks that
-// are not part of the generated config (filtered out or skipped) are dropped.
-func buildDependencies(stacks []discovery.StackInfo, projectByDir map[string]*Project) map[string]map[string]struct{} {
-	dependencies := make(map[string]map[string]struct{}, len(projectByDir))
-	for dir := range projectByDir {
-		dependencies[dir] = make(map[string]struct{})
+// resolved by discovery (AfterDirs/BeforeDirs) of every known stack. Stacks
+// that are not part of the generated config (filtered out or skipped) are
+// not listed, but ordering is followed through them, as `terramate run`
+// does: if a runs after m and m after z, a depends on z when m is excluded.
+func buildDependencies(stacks, all []discovery.StackInfo, projectByDir map[string]*Project) map[string]map[string]struct{} {
+	// after[dir] is the set of stacks dir runs directly after.
+	after := map[string]map[string]struct{}{}
+	addEdge := func(dir, dep string) {
+		if dir == dep {
+			return
+		}
+		if after[dir] == nil {
+			after[dir] = map[string]struct{}{}
+		}
+		after[dir][dep] = struct{}{}
+	}
+	for _, list := range [][]discovery.StackInfo{all, stacks} {
+		for _, stack := range list {
+			dir := stackDir(stack.Dir)
+			for _, dep := range stack.AfterDirs {
+				addEdge(dir, stackDir(dep))
+			}
+			for _, later := range stack.BeforeDirs {
+				addEdge(stackDir(later), dir)
+			}
+		}
 	}
 
-	for _, stack := range stacks {
-		dir := stackDir(stack.Dir)
-		if _, ok := projectByDir[dir]; !ok {
-			continue
-		}
-
-		for _, after := range stack.AfterDirs {
-			after = stackDir(after)
-			if _, ok := projectByDir[after]; ok && after != dir {
-				dependencies[dir][after] = struct{}{}
+	dependencies := make(map[string]map[string]struct{}, len(projectByDir))
+	for dir := range projectByDir {
+		deps := map[string]struct{}{}
+		visited := map[string]struct{}{dir: {}}
+		queue := sortedKeys(after[dir])
+		for len(queue) > 0 {
+			next := queue[0]
+			queue = queue[1:]
+			if _, seen := visited[next]; seen {
+				continue
 			}
-		}
-
-		for _, before := range stack.BeforeDirs {
-			before = stackDir(before)
-			if _, ok := projectByDir[before]; ok && before != dir {
-				dependencies[before][dir] = struct{}{}
+			visited[next] = struct{}{}
+			if _, generated := projectByDir[next]; generated {
+				deps[next] = struct{}{}
+				continue
 			}
+			queue = append(queue, sortedKeys(after[next])...)
 		}
+		dependencies[dir] = deps
 	}
 
 	return dependencies

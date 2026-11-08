@@ -307,7 +307,7 @@ With `--depends-on` and/or `--execution-order-groups`, stack ordering is read fr
 - a directory that isn't a stack expands to every stack below it;
 - tag queries such as `tag:network` expand to every stack matching the [tag filter](https://terramate.io/docs/cli/reference/cmdline/run#--tags).
 
-`depends_on` lists **project names**, which is what Atlantis matches it against, so `--depends-on` requires `--create-project-name` (the default). Dependencies on stacks that aren't part of the generated config (filtered out or skipped) are dropped, and a dependency cycle is reported as a warning.
+`depends_on` lists **project names**, which is what Atlantis matches it against, so `--depends-on` requires `--create-project-name` (the default). Stacks that aren't part of the generated config (filtered out, not changed, or skipped) aren't listed in `depends_on`, but ordering is followed through them as `terramate run` does: if `a` runs after `m` and `m` after `z`, `a` still depends on `z` when `m` isn't generated. A dependency cycle is reported as a warning.
 
 ```hcl
 stack {

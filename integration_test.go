@@ -48,7 +48,7 @@ func TestIntegration(t *testing.T) {
 			require.NoError(t, err)
 
 			opts := tt.opts
-			opts.NamingStacks = result.AllStacks
+			opts.AllStacks = result.AllStacks
 			cfg, err := atlantis.Generate(result.Stacks, opts)
 			require.NoError(t, err)
 			got, err := atlantis.MarshalYAML(cfg, false)
@@ -445,4 +445,30 @@ func initGitRepo(t *testing.T, dir string) {
 	runGit(t, dir, "init", "-q", "-b", "main")
 	runGit(t, dir, "add", ".")
 	runGit(t, dir, "-c", "user.name=test", "-c", "user.email=test@test.com", "commit", "-q", "-m", "init")
+}
+
+// With --changed, a changed stack still runs after a changed stack it
+// depends on through an unchanged one, matching
+// `terramate list --changed --run-order`.
+func TestCLIChangedKeepsTransitiveOrdering(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFile(t, dir, "terramate.tm.hcl", "terramate {\n  config {}\n}\n")
+	writeTestFile(t, dir, "stacks/z/stack.tm.hcl", "stack {}\n")
+	writeTestFile(t, dir, "stacks/m/stack.tm.hcl", "stack {\n  after = [\"../z\"]\n}\n")
+	writeTestFile(t, dir, "stacks/a/stack.tm.hcl", "stack {\n  after = [\"../m\"]\n}\n")
+	for _, s := range []string{"a", "m", "z"} {
+		writeTestFile(t, dir, "stacks/"+s+"/main.tf", "\n")
+	}
+	initGitRepo(t, dir)
+	runGit(t, dir, "checkout", "-q", "-b", "feature")
+	writeTestFile(t, dir, "stacks/a/main.tf", "# changed\n")
+	writeTestFile(t, dir, "stacks/z/main.tf", "# changed\n")
+	runGit(t, dir, "-c", "user.name=test", "-c", "user.email=test@test.com", "commit", "-q", "-am", "change a and z")
+
+	cfg := generateConfig(t, dir, "--changed", "--depends-on", "--execution-order-groups")
+
+	byDir := projectsByDir(cfg)
+	require.Len(t, byDir, 2)
+	require.Equal(t, []string{"z"}, byDir["stacks/a"].DependsOn)
+	require.Equal(t, 1, byDir["stacks/a"].ExecutionOrderGroup)
 }

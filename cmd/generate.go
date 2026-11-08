@@ -266,7 +266,7 @@ func runGenerate(cmd *cobra.Command, opts *GenerateOptions) error {
 		ProjectNameStrategy:  opts.ProjectNameStrategy,
 		ProjectNamePrefix:    opts.ProjectNamePrefix,
 		ProjectNameDepth:     opts.ProjectNameDepth,
-		NamingStacks:         discovered.AllStacks,
+		AllStacks:            discovered.AllStacks,
 		Warnf:                warnf,
 	})
 	if err != nil {

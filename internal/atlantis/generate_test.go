@@ -1205,3 +1205,42 @@ func TestMarshalOutputEndsWithSingleNewline(t *testing.T) {
 		}
 	}
 }
+
+// Ordering is followed through stacks that are not generated, as
+// `terramate run` does: a runs after m and m after z, so with m filtered
+// out (only in AllStacks) or skipped, a still runs after z.
+func TestDependenciesFollowedThroughExcludedStacks(t *testing.T) {
+	t.Parallel()
+
+	all := []discovery.StackInfo{
+		{Dir: "a", AfterDirs: []string{"m"}},
+		{Dir: "m", AfterDirs: []string{"z"}},
+		{Dir: "n", BeforeDirs: []string{"a"}},
+		{Dir: "y", BeforeDirs: []string{"n"}},
+		{Dir: "z"},
+	}
+	check := func(name string, cfg Config) {
+		t.Helper()
+		byDir := map[string]Project{}
+		for _, p := range cfg.Projects {
+			byDir[p.Dir] = p
+		}
+		if got := byDir["a"].DependsOn; !reflect.DeepEqual(got, []string{"y", "z"}) {
+			t.Fatalf("%s: depends_on of a: got %v, want [y z]", name, got)
+		}
+		if byDir["a"].ExecutionOrderGroup != 1 || byDir["z"].ExecutionOrderGroup != 0 {
+			t.Fatalf("%s: groups: a=%d z=%d", name, byDir["a"].ExecutionOrderGroup, byDir["z"].ExecutionOrderGroup)
+		}
+	}
+	opts := Options{CreateProjectName: true, DependsOn: true, ExecutionOrderGroups: true}
+
+	// m and n filtered out: only known through AllStacks.
+	filtered := opts
+	filtered.AllStacks = all
+	check("filtered", mustGenerate(t, []discovery.StackInfo{all[0], all[3], all[4]}, filtered))
+
+	// m and n skipped.
+	skipped := append([]discovery.StackInfo(nil), all...)
+	skipped[1].Skip, skipped[2].Skip = true, true
+	check("skipped", mustGenerate(t, skipped, opts))
+}

@@ -67,8 +67,10 @@ type Result struct {
 	// Stacks are the stacks selected by the filters, with full metadata.
 	Stacks []StackInfo
 	// AllStacks lists every stack in the repository (name, ID, description,
-	// dir, tags and skip only), regardless of filters. It gives project naming
-	// a stable context so names don't depend on which stacks a run selected.
+	// dir, tags, resolved ordering and skip only), regardless of filters. It
+	// gives project naming a stable context, so names don't depend on which
+	// stacks a run selected, and lets ordering be followed through stacks
+	// that were not selected.
 	AllStacks []StackInfo
 }
 
@@ -103,15 +105,24 @@ func Discover(opts DiscoverOptions) (Result, error) {
 		overrides, err := atlantisOverrides(root, stack)
 		overridesByDir[normalizeStackPath(stack.Dir.String())] = stackOverrides{overrides: overrides, err: err}
 
+		// Errors only fail the run for selected stacks (below); here a stack
+		// whose globals or order entries can't be read is simply not
+		// skipped and has no ordering.
+		afterDirs, afterErr := resolveOrderEntries(root, stack, stack.After)
+		beforeDirs, beforeErr := resolveOrderEntries(root, stack, stack.Before)
+		if afterErr != nil || beforeErr != nil {
+			afterDirs, beforeDirs = nil, nil
+		}
+
 		allStacks = append(allStacks, StackInfo{
 			Name:        stack.Name,
 			ID:          stack.ID,
 			Description: stack.Description,
 			Dir:         normalizeStackPath(stack.Dir.String()),
 			Tags:        append([]string(nil), stack.Tags...),
-			// Errors only fail the run for selected stacks (below); here a
-			// stack whose globals can't be read is simply not skipped.
-			Skip: err == nil && overrides.Skip,
+			AfterDirs:   afterDirs,
+			BeforeDirs:  beforeDirs,
+			Skip:        err == nil && overrides.Skip,
 		})
 	}
 	sort.Slice(allStacks, func(i, j int) bool {
