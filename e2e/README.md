@@ -49,6 +49,12 @@ EOF
 }
 ```
 
+`advance_main` pushes a commit to `main` so the pull request branch is behind
+its base (call it before changing files; it commits the working tree).
+`push_commit` updates an open pull request; follow it with
+`comment "atlantis plan"`. `assert_comment_count TEXT N` checks how often a
+string appears, e.g. that a resource is planned exactly once.
+
 `assert_generated_contains` checks the `atlantis.yaml` the hook generated for
 the pull request (read from the Atlantis container), for settings that do not
 show up in comments such as `depends_on`.

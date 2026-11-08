@@ -1,0 +1,19 @@
+no_header: true
+generate_workflows: true
+workflow_disable_safeguards: [git-out-of-sync, git-untracked]
+depends_on: true
+execution_order_groups: true
+apply_requirements: [mergeable]
+tag_requirements:
+  prod: [approved, mergeable]
+tag_workflows:
+  dev: dev-workflow
+workflows:
+  app-workflow:
+    plan:
+      steps:
+        - init
+        - plan
+    apply:
+      steps:
+        - apply
