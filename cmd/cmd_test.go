@@ -431,3 +431,27 @@ func TestCommandsHaveIndependentState(t *testing.T) {
 
 	assert.True(t, strings.HasPrefix(second.stdout, "version: 3"), "flag values must not leak between runs")
 }
+
+// Comma-separated list flags accept spaces after the commas, like the config
+// file and --tag-workflow/--tag-requirements do.
+func TestListFlagsAreTrimmed(t *testing.T) {
+	root := newFixture(t)
+
+	res := run(t, "generate", "--root", root, "--no-header", "--generate-workflows",
+		"--workflow-disable-safeguards", "git, outdated-code",
+		"--when-modified", "*.tf, *.hcl,",
+		"--apply-requirements", "approved, ,mergeable")
+
+	require.Equal(t, 0, res.code, res.stderr)
+	cfg := parsed(t, res.stdout)
+	project := cfg.Projects[0]
+	assert.Equal(t, []string{"*.tf", "*.hcl"}, project.Autoplan.WhenModified)
+	require.NotNil(t, project.ApplyRequirements)
+	assert.Equal(t, []string{"approved", "mergeable"}, *project.ApplyRequirements)
+	assert.Contains(t, planRun(t, cfg, "terramate", 0), "--disable-safeguards=git,outdated-code -- ")
+
+	// An explicitly empty list is still honored.
+	res = run(t, "generate", "--root", root, "--no-header", "--when-modified=")
+	require.Equal(t, 0, res.code, res.stderr)
+	assert.Equal(t, []string{}, parsed(t, res.stdout).Projects[0].Autoplan.WhenModified)
+}

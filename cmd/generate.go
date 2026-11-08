@@ -128,6 +128,30 @@ supported via Terramate globals (atlantis_skip, atlantis_workflow, etc).`,
 	return generateCmd
 }
 
+// normalizeGenerateOptions trims list values and drops empty entries, so
+// "--apply-requirements 'approved, mergeable'" means the same as the config
+// file list [approved, mergeable]. An empty list stays empty (not nil): it is
+// an explicit value, e.g. --workflow-disable-safeguards= keeps every
+// safeguard.
+func normalizeGenerateOptions(opts *GenerateOptions) {
+	opts.WhenModified = cleanList(opts.WhenModified)
+	opts.ApplyRequirements = cleanList(opts.ApplyRequirements)
+	opts.WorkflowDisableSafeguards = cleanList(opts.WorkflowDisableSafeguards)
+}
+
+func cleanList(values []string) []string {
+	if values == nil {
+		return nil
+	}
+	cleaned := make([]string, 0, len(values))
+	for _, v := range values {
+		if v = strings.TrimSpace(v); v != "" {
+			cleaned = append(cleaned, v)
+		}
+	}
+	return cleaned
+}
+
 // validateGenerateOptions checks option values after flags and the config
 // file have been merged, so values coming from either source are validated.
 func validateGenerateOptions(opts *GenerateOptions) error {
@@ -179,6 +203,7 @@ func runGenerate(cmd *cobra.Command, opts *GenerateOptions) error {
 		return err
 	}
 
+	normalizeGenerateOptions(opts)
 	if err := validateGenerateOptions(opts); err != nil {
 		return err
 	}
