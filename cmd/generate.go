@@ -134,7 +134,7 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	stacks, err := discovery.Discover(discovery.DiscoverOptions{
+	discovered, err := discovery.Discover(discovery.DiscoverOptions{
 		RootDir:     opts.Root,
 		TagFilter:   opts.Filter,
 		PathFilter:  opts.FilterPath,
@@ -147,7 +147,7 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("discovering stacks: %w", err)
 	}
 
-	cfg := atlantis.Generate(stacks, atlantis.Options{
+	cfg, err := atlantis.Generate(discovered.Stacks, atlantis.Options{
 		Autoplan:             opts.Autoplan,
 		Parallel:             opts.Parallel,
 		Automerge:            opts.Automerge,
@@ -165,7 +165,14 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 		ProjectNameStrategy:  opts.ProjectNameStrategy,
 		ProjectNamePrefix:    opts.ProjectNamePrefix,
 		ProjectNameDepth:     opts.ProjectNameDepth,
+		NamingStacks:         discovered.AllStacks,
+		Warnf: func(format string, args ...any) {
+			fmt.Fprintf(os.Stderr, "Warning: "+format+"\n", args...)
+		},
 	})
+	if err != nil {
+		return err
+	}
 
 	if len(opts.ConfigWorkflows) > 0 {
 		cfg.Workflows = make(map[string]interface{}, len(opts.ConfigWorkflows))

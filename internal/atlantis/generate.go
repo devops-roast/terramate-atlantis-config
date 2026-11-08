@@ -3,8 +3,8 @@ package atlantis
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"path/filepath"
 	"sort"
 	"strings"
 
@@ -13,16 +13,12 @@ import (
 	"github.com/devops-roast/terramate-atlantis-config/internal/discovery"
 )
 
-// ProjectNameStrategy controls how project names are generated from stack paths.
-const (
-	// NameStrategyAutoStrip auto-detects and removes the longest common path prefix.
-	NameStrategyAutoStrip = "auto-strip"
-	// NameStrategyStackName uses the stack's metadata name, prefixed with parent dirs for uniqueness.
-	NameStrategyStackName = "stack-name"
-	// NameStrategyLastN uses only the last N path segments.
-	NameStrategyLastN = "last-n"
-	// NameStrategyFull uses the full directory path (original behavior).
-	NameStrategyFull = "full"
+// ErrDependsOnRequiresNames is returned when depends_on generation is
+// requested without project names. Atlantis matches depends_on entries
+// against project names, so a depends_on list is meaningless without them.
+var ErrDependsOnRequiresNames = errors.New(
+	"depends_on requires project names: Atlantis matches depends_on entries against project names, " +
+		"so --depends-on cannot be used with --create-project-name=false",
 )
 
 // Options configures Atlantis config generation behavior.
@@ -44,10 +40,31 @@ type Options struct {
 	ProjectNameStrategy  string // auto-strip, stack-name, last-n, full
 	ProjectNamePrefix    string // explicit prefix to strip (used with any strategy)
 	ProjectNameDepth     int    // number of trailing path segments to use (for last-n)
+
+	// NamingStacks is the set of stacks project names are computed against,
+	// usually every stack in the repository. Naming against the full set keeps
+	// a stack's name the same no matter which filters (--changed, --filter,
+	// --filter-path, --exclude-*) selected it. Defaults to the stacks passed
+	// to Generate.
+	NamingStacks []discovery.StackInfo
+
+	// Warnf receives non-fatal warnings, such as dependency cycles.
+	// A nil Warnf discards them.
+	Warnf func(format string, args ...any)
+}
+
+func (o Options) warnf(format string, args ...any) {
+	if o.Warnf != nil {
+		o.Warnf(format, args...)
+	}
 }
 
 // Generate builds an Atlantis config from discovered stack metadata.
-func Generate(stacks []discovery.StackInfo, opts Options) Config {
+func Generate(stacks []discovery.StackInfo, opts Options) (Config, error) {
+	if opts.DependsOn && !opts.CreateProjectName {
+		return Config{}, ErrDependsOnRequiresNames
+	}
+
 	includedStacks := make([]discovery.StackInfo, 0, len(stacks))
 	for _, stack := range stacks {
 		if stack.Skip {
@@ -59,11 +76,10 @@ func Generate(stacks []discovery.StackInfo, opts Options) Config {
 	projects := make([]Project, 0, len(includedStacks))
 	projectByDir := make(map[string]*Project, len(includedStacks))
 
-	namer := newProjectNamer(includedStacks, opts)
+	namer := newProjectNamer(namingContext(stacks, opts.NamingStacks), opts)
 
 	for _, stack := range includedStacks {
-
-		dir := strings.TrimPrefix(stack.Dir, "/")
+		dir := stackDir(stack.Dir)
 
 		project := Project{
 			Dir: dir,
@@ -73,10 +89,10 @@ func Generate(stacks []discovery.StackInfo, opts Options) Config {
 		}
 
 		if opts.CreateProjectName {
-			project.Name = namer.nameFor(stack, dir)
+			project.Name = namer.nameFor(dir)
 		}
 
-		if opts.CreateWorkspace {
+		if opts.CreateWorkspace && dir != discovery.RootDir {
 			project.Workspace = sanitizeProjectName(dir)
 		}
 
@@ -113,14 +129,25 @@ func Generate(stacks []discovery.StackInfo, opts Options) Config {
 		}
 
 		projects = append(projects, project)
-		projectByDir[dir] = &projects[len(projects)-1]
+	}
+
+	// Index after all appends so the pointers can't be invalidated by a
+	// reallocation of the projects slice.
+	for i := range projects {
+		projectByDir[projects[i].Dir] = &projects[i]
 	}
 
 	if opts.ExecutionOrderGroups || opts.DependsOn {
 		dependencies := buildDependencies(includedStacks, projectByDir)
+		groups, cyclic := computeExecutionOrderGroups(dependencies)
+		if len(cyclic) > 0 {
+			opts.warnf(
+				"dependency cycle detected involving stacks %s; their ordering can't be honored and they are placed in execution_order_group 0",
+				strings.Join(cyclic, ", "),
+			)
+		}
 
 		if opts.ExecutionOrderGroups {
-			groups := computeExecutionOrderGroups(dependencies)
 			for dir, group := range groups {
 				if project, ok := projectByDir[dir]; ok {
 					project.ExecutionOrderGroup = group
@@ -130,9 +157,16 @@ func Generate(stacks []discovery.StackInfo, opts Options) Config {
 
 		if opts.DependsOn {
 			for dir, deps := range dependencies {
-				if project, ok := projectByDir[dir]; ok {
-					project.DependsOn = sortedKeys(deps)
+				project, ok := projectByDir[dir]
+				if !ok || len(deps) == 0 {
+					continue
 				}
+				names := make([]string, 0, len(deps))
+				for _, depDir := range sortedKeys(deps) {
+					names = append(names, projectByDir[depDir].Name)
+				}
+				sort.Strings(names)
+				project.DependsOn = names
 			}
 		}
 	}
@@ -167,7 +201,17 @@ func Generate(stacks []discovery.StackInfo, opts Options) Config {
 		ParallelPlan:  opts.Parallel,
 		ParallelApply: opts.Parallel,
 		Projects:      projects,
+	}, nil
+}
+
+// stackDir normalizes a StackInfo.Dir into an Atlantis project dir.
+// The root stack is "." because Atlantis requires a non-empty dir.
+func stackDir(dir string) string {
+	dir = strings.Trim(strings.ReplaceAll(dir, "\\", "/"), "/")
+	if dir == "" {
+		return discovery.RootDir
 	}
+	return dir
 }
 
 func PreserveWorkflows(existingYAML []byte, cfg *Config) error {
@@ -212,11 +256,6 @@ func MarshalJSON(cfg Config) ([]byte, error) {
 	return json.MarshalIndent(cfg, "", "  ")
 }
 
-func sanitizeProjectName(dir string) string {
-	name := strings.ReplaceAll(dir, "/", "-")
-	return strings.TrimLeft(name, "-")
-}
-
 func mergeWhenModified(defaults, extraDeps []string) []string {
 	merged := make([]string, 0, len(defaults)+len(extraDeps))
 	merged = append(merged, defaults...)
@@ -244,6 +283,10 @@ func requirementsFromTags(tags []string, mapping map[string][]string) ([]string,
 	return nil, false
 }
 
+// buildDependencies returns, for every project dir, the set of project dirs
+// it must run after. It uses the stack.after/stack.before entries already
+// resolved by discovery (AfterDirs/BeforeDirs); dependencies on stacks that
+// are not part of the generated config (filtered out or skipped) are dropped.
 func buildDependencies(stacks []discovery.StackInfo, projectByDir map[string]*Project) map[string]map[string]struct{} {
 	dependencies := make(map[string]map[string]struct{}, len(projectByDir))
 	for dir := range projectByDir {
@@ -251,22 +294,22 @@ func buildDependencies(stacks []discovery.StackInfo, projectByDir map[string]*Pr
 	}
 
 	for _, stack := range stacks {
-		stackDir := strings.TrimPrefix(filepath.ToSlash(stack.Dir), "/")
-		if _, ok := projectByDir[stackDir]; !ok {
+		dir := stackDir(stack.Dir)
+		if _, ok := projectByDir[dir]; !ok {
 			continue
 		}
 
-		for _, after := range stack.After {
-			resolved := resolveDependencyPath(stackDir, after)
-			if _, ok := projectByDir[resolved]; ok {
-				dependencies[stackDir][resolved] = struct{}{}
+		for _, after := range stack.AfterDirs {
+			after = stackDir(after)
+			if _, ok := projectByDir[after]; ok && after != dir {
+				dependencies[dir][after] = struct{}{}
 			}
 		}
 
-		for _, before := range stack.Before {
-			resolved := resolveDependencyPath(stackDir, before)
-			if _, ok := projectByDir[resolved]; ok {
-				dependencies[resolved][stackDir] = struct{}{}
+		for _, before := range stack.BeforeDirs {
+			before = stackDir(before)
+			if _, ok := projectByDir[before]; ok && before != dir {
+				dependencies[before][dir] = struct{}{}
 			}
 		}
 	}
@@ -274,37 +317,26 @@ func buildDependencies(stacks []discovery.StackInfo, projectByDir map[string]*Pr
 	return dependencies
 }
 
-func resolveDependencyPath(stackDir, rawPath string) string {
-	normalized := filepath.ToSlash(strings.TrimSpace(rawPath))
-	if normalized == "" {
-		return ""
-	}
-
-	if strings.HasPrefix(normalized, "/") {
-		return strings.TrimPrefix(filepath.ToSlash(filepath.Clean(normalized)), "/")
-	}
-
-	joined := filepath.Join(stackDir, normalized)
-	return strings.TrimPrefix(filepath.ToSlash(filepath.Clean(joined)), "./")
-}
-
-func computeExecutionOrderGroups(dependencies map[string]map[string]struct{}) map[string]int {
-	groups := make(map[string]int, len(dependencies))
+// computeExecutionOrderGroups assigns each dir the length of its longest
+// dependency chain. Dirs that can't be ordered because they are part of, or
+// depend on, a dependency cycle are placed in group 0 and returned (sorted)
+// as the second value.
+func computeExecutionOrderGroups(dependencies map[string]map[string]struct{}) (groups map[string]int, unresolved []string) {
+	groups = make(map[string]int, len(dependencies))
 	resolved := make(map[string]struct{}, len(dependencies))
+	dirs := sortedDependencyDirs(dependencies)
 
-	for len(resolved) < len(dependencies) {
+	for {
 		progressed := false
 
-		dirs := sortedDependencyDirs(dependencies)
 		for _, dir := range dirs {
 			if _, done := resolved[dir]; done {
 				continue
 			}
 
-			deps := dependencies[dir]
 			allResolved := true
 			group := 0
-			for dep := range deps {
+			for dep := range dependencies[dir] {
 				depGroup, ok := groups[dep]
 				if !ok {
 					allResolved = false
@@ -324,20 +356,20 @@ func computeExecutionOrderGroups(dependencies map[string]map[string]struct{}) ma
 			progressed = true
 		}
 
-		if progressed {
-			continue
-		}
-
-		for _, dir := range dirs {
-			if _, done := resolved[dir]; done {
-				continue
-			}
-			groups[dir] = 0
-			resolved[dir] = struct{}{}
+		if !progressed {
+			break
 		}
 	}
 
-	return groups
+	for _, dir := range dirs {
+		if _, done := resolved[dir]; done {
+			continue
+		}
+		groups[dir] = 0
+		unresolved = append(unresolved, dir)
+	}
+
+	return groups, unresolved
 }
 
 func sortedDependencyDirs(m map[string]map[string]struct{}) []string {
@@ -356,194 +388,4 @@ func sortedKeys(m map[string]struct{}) []string {
 	}
 	sort.Strings(keys)
 	return keys
-}
-
-type projectNamer struct {
-	strategy     string
-	prefix       string
-	depth        int
-	commonPrefix string
-	namesByDir   map[string]string
-}
-
-func newProjectNamer(stacks []discovery.StackInfo, opts Options) *projectNamer {
-	strategy := opts.ProjectNameStrategy
-	if strategy == "" {
-		strategy = NameStrategyAutoStrip
-	}
-
-	n := &projectNamer{
-		strategy: strategy,
-		prefix:   opts.ProjectNamePrefix,
-		depth:    opts.ProjectNameDepth,
-	}
-
-	if strategy == NameStrategyAutoStrip && opts.ProjectNamePrefix == "" {
-		n.commonPrefix = detectCommonPrefix(stacks)
-	}
-
-	n.namesByDir = n.buildUniqueNames(stacks)
-	return n
-}
-
-func (n *projectNamer) nameFor(_ discovery.StackInfo, dir string) string {
-	if name, ok := n.namesByDir[dir]; ok {
-		return name
-	}
-	return sanitizeProjectName(dir)
-}
-
-func (n *projectNamer) buildUniqueNames(stacks []discovery.StackInfo) map[string]string {
-	rawNames := make(map[string]string, len(stacks))
-	for _, s := range stacks {
-		dir := strings.TrimPrefix(s.Dir, "/")
-		rawNames[dir] = n.rawName(s, dir)
-	}
-
-	seen := make(map[string][]string)
-	for dir, name := range rawNames {
-		seen[name] = append(seen[name], dir)
-	}
-
-	result := make(map[string]string, len(stacks))
-	for dir, name := range rawNames {
-		if len(seen[name]) > 1 {
-			result[dir] = n.disambiguate(dir, seen[name])
-		} else {
-			result[dir] = name
-		}
-	}
-	return result
-}
-
-func (n *projectNamer) rawName(stack discovery.StackInfo, dir string) string {
-	switch n.strategy {
-	case NameStrategyStackName:
-		return n.stackNameRaw(stack, dir)
-	case NameStrategyLastN:
-		return n.lastNRaw(dir)
-	case NameStrategyFull:
-		return sanitizeProjectName(dir)
-	default:
-		return n.autoStripRaw(dir)
-	}
-}
-
-func (n *projectNamer) disambiguate(dir string, conflicting []string) string {
-	parts := strings.Split(filepath.ToSlash(dir), "/")
-
-	for depth := 1; depth <= len(parts); depth++ {
-		candidate := sanitizeProjectName(strings.Join(parts[max(0, len(parts)-depth):], "/"))
-		unique := true
-		for _, other := range conflicting {
-			if other == dir {
-				continue
-			}
-			otherParts := strings.Split(filepath.ToSlash(other), "/")
-			otherCandidate := sanitizeProjectName(strings.Join(otherParts[max(0, len(otherParts)-depth):], "/"))
-			if candidate == otherCandidate {
-				unique = false
-				break
-			}
-		}
-		if unique {
-			return candidate
-		}
-	}
-	return sanitizeProjectName(dir)
-}
-
-func (n *projectNamer) autoStripRaw(dir string) string {
-	stripped := dir
-	if n.prefix != "" {
-		stripped = strings.TrimPrefix(dir, n.prefix)
-		stripped = strings.TrimPrefix(stripped, "/")
-	} else if n.commonPrefix != "" {
-		stripped = strings.TrimPrefix(dir, n.commonPrefix)
-		stripped = strings.TrimPrefix(stripped, "/")
-	}
-	if stripped == "" {
-		stripped = dir
-	}
-	return sanitizeProjectName(stripped)
-}
-
-func (n *projectNamer) stackNameRaw(stack discovery.StackInfo, dir string) string {
-	stackName := stack.Name
-	if stackName == "" {
-		stackName = filepath.Base(dir)
-	}
-
-	stripped := dir
-	if n.prefix != "" {
-		stripped = strings.TrimPrefix(dir, n.prefix)
-		stripped = strings.TrimPrefix(stripped, "/")
-	}
-
-	parent := filepath.Dir(stripped)
-	if parent == "." || parent == "" {
-		return sanitizeProjectName(stackName)
-	}
-
-	parentParts := strings.Split(filepath.ToSlash(parent), "/")
-	contextParts := parentParts
-	if len(contextParts) > 3 {
-		contextParts = contextParts[len(contextParts)-3:]
-	}
-
-	return sanitizeProjectName(strings.Join(contextParts, "/") + "/" + stackName)
-}
-
-func (n *projectNamer) lastNRaw(dir string) string {
-	depth := n.depth
-	if depth <= 0 {
-		depth = 3
-	}
-
-	parts := strings.Split(filepath.ToSlash(dir), "/")
-	if len(parts) <= depth {
-		return sanitizeProjectName(dir)
-	}
-
-	return sanitizeProjectName(strings.Join(parts[len(parts)-depth:], "/"))
-}
-
-func detectCommonPrefix(stacks []discovery.StackInfo) string {
-	if len(stacks) == 0 {
-		return ""
-	}
-
-	dirs := make([]string, 0, len(stacks))
-	for _, s := range stacks {
-		dir := strings.TrimPrefix(s.Dir, "/")
-		if dir != "" {
-			dirs = append(dirs, dir)
-		}
-	}
-	if len(dirs) == 0 {
-		return ""
-	}
-
-	first := strings.Split(dirs[0], "/")
-
-	prefixLen := 0
-	for i := range first {
-		candidate := strings.Join(first[:i+1], "/")
-		allMatch := true
-		for _, d := range dirs[1:] {
-			if !strings.HasPrefix(d, candidate+"/") {
-				allMatch = false
-				break
-			}
-		}
-		if !allMatch {
-			break
-		}
-		prefixLen = i + 1
-	}
-
-	if prefixLen == 0 {
-		return ""
-	}
-	return strings.Join(first[:prefixLen], "/")
 }

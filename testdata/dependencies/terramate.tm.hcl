@@ -1,0 +1,4 @@
+terramate {
+  config {
+  }
+}
