@@ -1,0 +1,63 @@
+version: 3
+automerge: false
+parallel_plan: true
+parallel_apply: true
+projects:
+  - name: app
+    dir: stacks/app
+    workflow: app-workflow
+    execution_order_group: 2
+    depends_on:
+      - network-vpc
+    apply_requirements:
+      - mergeable
+    autoplan:
+      enabled: true
+      when_modified:
+        - '*.tf'
+        - '*.tf.json'
+        - .terraform.lock.hcl
+  - name: network
+    dir: stacks/network
+    workflow: terramate
+    apply_requirements:
+      - approved
+      - mergeable
+    autoplan:
+      enabled: true
+      when_modified:
+        - '*.tf'
+        - '*.tf.json'
+        - .terraform.lock.hcl
+  - name: network-vpc
+    dir: stacks/network/vpc
+    workflow: terramate
+    execution_order_group: 1
+    depends_on:
+      - network
+    apply_requirements:
+      - approved
+      - mergeable
+    autoplan:
+      enabled: true
+      when_modified:
+        - '*.tf'
+        - '*.tf.json'
+        - .terraform.lock.hcl
+workflows:
+  app-workflow:
+    apply:
+      steps:
+        - apply
+    plan:
+      steps:
+        - init
+        - plan
+  terramate:
+    apply:
+      steps:
+        - run: terramate run --no-recursive --disable-safeguards=git-out-of-sync,git-untracked -- terraform apply $PLANFILE
+    plan:
+      steps:
+        - run: terramate run --no-recursive --disable-safeguards=git-out-of-sync,git-untracked -- terraform init -input=false
+        - run: terramate run --no-recursive --disable-safeguards=git-out-of-sync,git-untracked -- terraform plan -input=false -out=$PLANFILE

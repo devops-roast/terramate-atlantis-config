@@ -88,11 +88,11 @@ projects:
 
 ### Config file
 
-Place `.terramate-atlantis.yaml` in your repo root. CLI flags override config file values.
+Place `.terramate-atlantis.yaml` (or `.yml`) in your repo root, or point `--config` at another file. Flags you pass explicitly override config file values. Unknown keys are an error, so a typo fails loudly instead of being ignored.
 
 ```yaml
 output: atlantis.yaml
-workflow: terramate
+generate_workflows: true
 autoplan: true
 parallel: true
 project_name_strategy: last-n
@@ -107,16 +107,57 @@ when_modified:
 tag_workflows:
   production: prod-workflow
   staging: staging-workflow
+tag_requirements:
+  production: [approved, mergeable]
 workflows:
   prod-workflow:
     plan:
       steps:
-        - run: terramate run -- terraform init -input=false
-        - run: terramate run -- terraform plan -input=false -out=$PLANFILE
+        - run: terramate run --no-recursive -- terraform init -input=false
+        - run: terramate run --no-recursive -- terraform plan -input=false -out=$PLANFILE
     apply:
       steps:
-        - run: terramate run -- terraform apply $PLANFILE
+        - run: terramate run --no-recursive -- terraform apply $PLANFILE
 ```
+
+Every key matches a `generate` flag:
+
+| Key                           | Type                  | Flag                            |
+| ----------------------------- | --------------------- | ------------------------------- |
+| `output`                      | string                | `--output`                      |
+| `format`                      | string                | `--format`                      |
+| `no_header`                   | bool                  | `--no-header`                   |
+| `log_level`                   | string                | `--log-level`                   |
+| `filter`                      | string                | `--filter`                      |
+| `filter_path`                 | string                | `--filter-path`                 |
+| `exclude_tags`                | string                | `--exclude-tags`                |
+| `exclude_path`                | string                | `--exclude-path`                |
+| `changed`                     | bool                  | `--changed`                     |
+| `changed_base_ref`            | string                | `--changed-base-ref`            |
+| `create_project_name`         | bool                  | `--create-project-name`         |
+| `project_name_strategy`       | string                | `--project-name-strategy`       |
+| `project_name_prefix`         | string                | `--project-name-prefix`         |
+| `project_name_depth`          | int                   | `--project-name-depth`          |
+| `create_workspace`            | bool                  | `--create-workspace`            |
+| `sort_by`                     | string                | `--sort-by`                     |
+| `execution_order_groups`      | bool                  | `--execution-order-groups`      |
+| `depends_on`                  | bool                  | `--depends-on`                  |
+| `autoplan`                    | bool                  | `--autoplan`                    |
+| `parallel`                    | bool                  | `--parallel`                    |
+| `automerge`                   | bool                  | `--automerge`                   |
+| `workflow`                    | string                | `--workflow`                    |
+| `terraform_version`           | string                | `--terraform-version`           |
+| `when_modified`               | list(string)          | `--when-modified`               |
+| `apply_requirements`          | list(string)          | `--apply-requirements`          |
+| `tag_workflows`               | map(string)           | `--tag-workflow`                |
+| `tag_requirements`            | map(list(string))     | `--tag-requirements`            |
+| `preserve_workflows`          | bool                  | `--preserve-workflows`          |
+| `generate_workflows`          | bool                  | `--generate-workflows`          |
+| `workflow_terramate_wrap`     | bool                  | `--workflow-terramate-wrap`     |
+| `workflow_disable_safeguards` | list(string)          | `--workflow-disable-safeguards` |
+| `workflows`                   | map of Atlantis workflows | none (config file only)     |
+
+`tag_requirements` values may also be a comma-separated string (`production: approved,mergeable`). `--root`, `--config`, `--check` and `--diff` describe a single invocation and have no config key.
 
 ### CLI flags
 
@@ -176,8 +217,11 @@ See [Dependencies](#dependencies) for how `after`/`before` are resolved.
 | `--tag-workflow`            |                                        | Map stack tags to workflows: `tag=workflow`, comma-separated        |
 | `--tag-requirements`        |                                        | Map a stack tag to apply requirements: `tag=req1,req2`, repeatable  |
 | `--preserve-workflows`      | `false`                                | Keep existing workflow blocks from current atlantis.yaml            |
-| `--generate-workflows`      | `false`                                | Auto-generate workflow blocks wrapping terraform in `terramate run` |
+| `--generate-workflows`      | `false`                                | Generate a `terramate` workflow and use it as the default workflow  |
 | `--workflow-terramate-wrap` | `true`                                 | Wrap terraform commands with `terramate run` in generated workflows |
+| `--workflow-disable-safeguards` | `git`                              | Terramate safeguards the generated workflow disables; empty keeps all |
+
+See [Workflows](#workflows) for how workflows are generated, assigned and merged.
 
 **CI modes**
 
@@ -259,6 +303,46 @@ stack {
     - network-dns
 ```
 
+### Workflows
+
+`--generate-workflows` adds a `terramate` workflow and assigns it to every project that has no other workflow. A project's workflow is chosen in this order:
+
+1. the stack's `atlantis_workflow` global;
+2. a `--tag-workflow` / `tag_workflows` mapping for one of the stack's tags;
+3. `--workflow` / `workflow`;
+4. the generated `terramate` workflow, when `--generate-workflows` is on.
+
+The generated workflow runs Terraform through `terramate run`:
+
+```yaml
+workflows:
+  terramate:
+    plan:
+      steps:
+        - run: terramate run --no-recursive --disable-safeguards=git -- terraform init -input=false
+        - run: terramate run --no-recursive --disable-safeguards=git -- terraform plan -input=false -out=$PLANFILE
+    apply:
+      steps:
+        - run: terramate run --no-recursive --disable-safeguards=git -- terraform apply $PLANFILE
+```
+
+- **`--no-recursive`**: every stack is its own Atlantis project, so a parent stack must not also run its nested child stacks.
+- **`--disable-safeguards=git`**: Terramate's git safeguards don't hold inside an Atlantis checkout. Atlantis plans pull requests whose branch is usually behind the default branch, which makes the `git-out-of-sync` safeguard refuse to run (`current HEAD is out-of-date with the remote base branch`). The pre-workflow hook and Terraform also write files into the checkout (`atlantis.yaml`, plan and lock files), which the `git-untracked` and `git-uncommitted` safeguards are meant to catch. `outdated-code` stays enabled. Pick a different set with `--workflow-disable-safeguards git-out-of-sync,git-untracked`, or keep every safeguard with `--workflow-disable-safeguards=`.
+
+If you write your own workflows that call `terramate run`, add the same flags, or set the environment variable on the Atlantis server:
+
+```sh
+TM_DISABLE_SAFEGUARDS=git
+```
+
+**Merging.** Workflows from three sources are merged by name. From lowest to highest precedence:
+
+1. workflows kept from the existing output file with `--preserve-workflows`;
+2. the generated `terramate` workflow (`--generate-workflows`), so a stale copy in the existing file is refreshed;
+3. workflows defined under `workflows:` in the config file, so you can replace the generated workflow by defining one with the same name.
+
+When a config file workflow overrides another one, a warning names it on stderr.
+
 ## 💡 Recipes
 
 **Generate for changed stacks only:**
@@ -267,14 +351,17 @@ stack {
 terramate-atlantis-config generate --changed --changed-base-ref main --output atlantis.yaml
 ```
 
-**Short project names in CI (recommended for PR workflows):**
+**Short project names, changed stacks only (recommended for PR workflows):**
 
 ```yaml
 # .terramate-atlantis.yaml
 project_name_strategy: last-n
 project_name_depth: 2
 changed: true
+changed_base_ref: origin/main
 ```
+
+Names don't depend on which stacks are included, so a project keeps its name whether or not it changed in a given PR.
 
 **Check atlantis.yaml is up to date in CI:**
 

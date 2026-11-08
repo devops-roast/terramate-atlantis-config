@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"sort"
 	"strings"
 
@@ -212,26 +211,6 @@ func stackDir(dir string) string {
 		return discovery.RootDir
 	}
 	return dir
-}
-
-func PreserveWorkflows(existingYAML []byte, cfg *Config) error {
-	var existing map[string]interface{}
-	if err := yaml.Unmarshal(existingYAML, &existing); err != nil {
-		return fmt.Errorf("unmarshaling existing yaml: %w", err)
-	}
-
-	workflowsRaw, ok := existing["workflows"]
-	if !ok {
-		return nil
-	}
-
-	workflows, ok := workflowsRaw.(map[string]interface{})
-	if !ok {
-		return fmt.Errorf("workflows must be a map")
-	}
-
-	cfg.Workflows = workflows
-	return nil
 }
 
 // MarshalYAML marshals an Atlantis Config into YAML.
