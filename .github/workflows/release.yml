@@ -4,7 +4,9 @@ name: release
 on:
   push:
     tags:
-      - "v*"
+      # Full semver tags only, so moving the major tag (v1) below does not
+      # trigger another release.
+      - "v[0-9]+.[0-9]+.[0-9]+*"
 
 permissions:
   contents: write
@@ -35,3 +37,14 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ steps.github_app.outputs.token }}
+      # Lets users pin the GitHub Action and pre-commit hook to the major
+      # version (`@v1`, `rev: v1`). Pushed with the workflow's GITHUB_TOKEN,
+      # which does not trigger other workflows.
+      - name: Move major version tag
+        if: ${{ !contains(github.ref_name, '-') }}
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          major="${TAG%%.*}"
+          git tag -f "$major" "${GITHUB_SHA}"
+          git push -f origin "refs/tags/${major}"
