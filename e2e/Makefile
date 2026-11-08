@@ -53,8 +53,8 @@ clean: ## Tear down everything including volumes
 ##@ Test
 
 .PHONY: test
-test: ## Run E2E test (create PR, verify Atlantis comments)
-	@$(E2E_DIR)/scripts/run-test.sh
+test: ## Run E2E scenarios (SCENARIOS="01-plan-apply ..." to select)
+	@$(E2E_DIR)/scripts/run-test.sh $(SCENARIOS)
 
 .PHONY: e2e
 e2e: up test ## Full pipeline: build → up → setup → test

@@ -1,8 +1,21 @@
 #!/usr/bin/env bash
+# Runs E2E scenarios against the Gitea + Atlantis environment.
+#
+# Usage: run-test.sh [SCENARIO...]
+#   SCENARIO is a file name in e2e/scenarios/ with or without the .sh suffix
+#   (e.g. 01-plan-apply). With no arguments every scenario runs in order.
+#
+# On failure the Atlantis and Gitea logs are dumped and the exit code is 1.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 E2E_DIR="$(dirname "$SCRIPT_DIR")"
+SCENARIO_DIR="${E2E_DIR}/scenarios"
+
+command -v jq >/dev/null || {
+	echo "ERROR: jq is required"
+	exit 1
+}
 
 if [ ! -f "$E2E_DIR/.env.secrets" ]; then
 	echo "ERROR: .env.secrets not found — run 'make setup' first"
@@ -11,115 +24,75 @@ fi
 
 # shellcheck source=/dev/null
 source "$E2E_DIR/.env.secrets"
-TOKEN="${ATLANTIS_GITEA_TOKEN:?ATLANTIS_GITEA_TOKEN not set}"
+export E2E_GITEA_TOKEN="${ATLANTIS_GITEA_TOKEN:?ATLANTIS_GITEA_TOKEN not set}"
+export E2E_DEV_TOKEN="${E2E_DEV_TOKEN:?E2E_DEV_TOKEN not set — re-run 'make setup'}"
 
-GITEA_URL="${GITEA_URL:-http://localhost:3000}"
-GITEA_ADMIN_USER="${GITEA_ADMIN_USER:-e2e-admin}"
-GITEA_ADMIN_PASS="${GITEA_ADMIN_PASS:-e2e-password-123}"
-TEST_REPO="${TEST_REPO:-e2e-test-repo}"
-ATLANTIS_TIMEOUT="${ATLANTIS_TIMEOUT:-120}"
+E2E_WORK_DIR=$(mktemp -d)
+export E2E_WORK_DIR
+trap 'rm -rf "$E2E_WORK_DIR"' EXIT
 
-BRANCH_NAME="test/e2e-$(date +%s)"
+scenarios=()
+if [ "$#" -gt 0 ]; then
+	for name in "$@"; do
+		file="${SCENARIO_DIR}/${name%.sh}.sh"
+		[ -f "$file" ] || {
+			echo "ERROR: unknown scenario $name"
+			exit 1
+		}
+		scenarios+=("$file")
+	done
+else
+	for file in "$SCENARIO_DIR"/*.sh; do
+		scenarios+=("$file")
+	done
+fi
 
-echo "=== E2E Test ==="
-
-echo "[1/5] Cloning repository …"
-WORK_DIR=$(mktemp -d)
-trap 'rm -rf "$WORK_DIR"' EXIT
-
-git clone \
-	"http://${GITEA_ADMIN_USER}:${GITEA_ADMIN_PASS}@localhost:3000/${GITEA_ADMIN_USER}/${TEST_REPO}.git" \
-	"$WORK_DIR/repo" 2>/dev/null
-cd "$WORK_DIR/repo"
-
-echo "[2/5] Creating branch ${BRANCH_NAME} with a new stack …"
-git checkout -b "$BRANCH_NAME" 2>/dev/null
-
-mkdir -p stacks/staging
-cat >stacks/staging/stack.tm.hcl <<'HCL'
-stack {
-  name = "staging"
-  id   = "e2e00000-0000-0000-0000-000000000099"
-}
-HCL
-
-cat >stacks/staging/main.tf <<'TF'
-terraform {
-  required_version = ">= 1.4"
+dump_logs() {
+	echo ""
+	echo "=== Atlantis logs (last 200 lines) ==="
+	docker logs --tail 200 "${ATLANTIS_CONTAINER:-e2e-atlantis}" 2>&1 || true
+	echo ""
+	echo "=== Gitea logs (last 50 lines) ==="
+	docker logs --tail 50 "${GITEA_CONTAINER:-e2e-gitea}" 2>&1 || true
 }
 
-resource "terraform_data" "staging" {
-  input = "e2e-staging"
-}
-TF
+echo "=== E2E scenarios ==="
+passed=()
+failed=()
+for file in "${scenarios[@]}"; do
+	scenario="$(basename "$file" .sh)"
+	echo ""
+	echo "▶ ${scenario}"
+	start=$SECONDS
+	# Each scenario runs in its own subshell so a failed command or assertion
+	# stops only that scenario, and its pull request is always closed. The
+	# subshell must not be an `if` condition, or bash would disable `set -e`
+	# inside it.
+	set +e
+	(
+		set -euo pipefail
+		# shellcheck source=e2e/scripts/lib.sh
+		source "$SCRIPT_DIR/lib.sh"
+		# shellcheck source=/dev/null
+		source "$file"
+		trap close_pr EXIT
+		scenario_run
+	)
+	rc=$?
+	set -e
+	if [ "$rc" -eq 0 ]; then
+		passed+=("$scenario")
+		echo "  PASS ${scenario} ($((SECONDS - start))s)"
+	else
+		failed+=("$scenario")
+		echo "  FAIL ${scenario} ($((SECONDS - start))s)"
+	fi
+done
 
-git add -A
-git \
-	-c user.name="E2E Bot" \
-	-c user.email="e2e@test.local" \
-	commit -m "Add staging stack" >/dev/null
-git push origin "$BRANCH_NAME" 2>/dev/null
-echo "      branch pushed"
-
-echo "[3/5] Opening pull request …"
-PR_RESPONSE=$(curl -sf -X POST \
-	"${GITEA_URL}/api/v1/repos/${GITEA_ADMIN_USER}/${TEST_REPO}/pulls" \
-	-H "Content-Type: application/json" \
-	-H "Authorization: token ${TOKEN}" \
-	-d "{
-    \"title\":\"E2E: add staging stack\",
-    \"body\":\"Automated E2E test — adds a third Terramate stack.\",
-    \"head\":\"${BRANCH_NAME}\",
-    \"base\":\"main\"
-  }")
-
-PR_NUMBER=$(echo "$PR_RESPONSE" | grep -o '"number":[0-9]*' | head -1 | cut -d: -f2)
-if [ -z "$PR_NUMBER" ]; then
-	echo "ERROR: could not create pull request"
-	echo "$PR_RESPONSE"
+echo ""
+echo "=== Summary: ${#passed[@]} passed, ${#failed[@]} failed ==="
+if [ "${#failed[@]}" -gt 0 ]; then
+	printf '  failed: %s\n' "${failed[@]}"
+	dump_logs
 	exit 1
 fi
-echo "      PR #${PR_NUMBER} — ${GITEA_URL}/${GITEA_ADMIN_USER}/${TEST_REPO}/pulls/${PR_NUMBER}"
-
-echo "[4/5] Waiting for Atlantis to comment (timeout ${ATLANTIS_TIMEOUT}s) …"
-ELAPSED=0
-INTERVAL=5
-FOUND=false
-
-while [ "$ELAPSED" -lt "$ATLANTIS_TIMEOUT" ]; do
-	COMMENTS=$(curl -sf \
-		"${GITEA_URL}/api/v1/repos/${GITEA_ADMIN_USER}/${TEST_REPO}/issues/${PR_NUMBER}/comments" \
-		-H "Authorization: token ${TOKEN}" 2>/dev/null || echo "[]")
-
-	if echo "$COMMENTS" | grep -qiE 'plan|atlantis|terraform'; then
-		FOUND=true
-		break
-	fi
-
-	sleep "$INTERVAL"
-	ELAPSED=$((ELAPSED + INTERVAL))
-	printf "\r      %ds / %ds" "$ELAPSED" "$ATLANTIS_TIMEOUT"
-done
-echo ""
-
-echo "[5/5] Results"
-echo "---"
-
-if [ "$FOUND" = true ]; then
-	echo "✓ PASS — Atlantis posted a comment on PR #${PR_NUMBER}"
-	echo ""
-	echo "Comment excerpt:"
-	echo "$COMMENTS" | jq -r '.[].body' 2>/dev/null | head -40 || echo "$COMMENTS"
-	EXIT_CODE=0
-else
-	echo "✗ FAIL — Atlantis did not comment within ${ATLANTIS_TIMEOUT}s"
-	echo ""
-	echo "Troubleshooting:"
-	echo "  make logs-atlantis   — check Atlantis logs for errors"
-	echo "  make logs-gitea      — check Gitea webhook delivery"
-	echo "  Visit ${GITEA_URL}/${GITEA_ADMIN_USER}/${TEST_REPO}/settings/hooks to inspect deliveries"
-	EXIT_CODE=1
-fi
-
-echo "---"
-exit "$EXIT_CODE"

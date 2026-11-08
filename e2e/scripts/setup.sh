@@ -11,6 +11,7 @@ GITEA_ADMIN_EMAIL="${GITEA_ADMIN_EMAIL:-admin@e2e.local}"
 TEST_REPO="${TEST_REPO:-e2e-test-repo}"
 WEBHOOK_SECRET="${WEBHOOK_SECRET:-e2e-webhook-secret}"
 GITEA_CONTAINER="${GITEA_CONTAINER:-e2e-gitea}"
+E2E_DEV_USER="${E2E_DEV_USER:-e2e-dev}"
 
 echo "=== Gitea setup ==="
 
@@ -37,11 +38,31 @@ if [ -z "$TOKEN" ]; then
 fi
 echo "      token: ${TOKEN:0:8}…"
 
-echo "[3/6] Persisting token …"
+echo "[3/6] Creating developer user ${E2E_DEV_USER} …"
+# Atlantis ignores comments written by its own account, so scenarios comment
+# (e.g. "atlantis apply") as a separate user.
+docker exec --user 1000 "$GITEA_CONTAINER" gitea admin user create \
+	--username "$E2E_DEV_USER" \
+	--password "$GITEA_ADMIN_PASS" \
+	--email "${E2E_DEV_USER}@e2e.local" \
+	--must-change-password=false 2>/dev/null &&
+	echo "      user created" ||
+	echo "      user already exists"
+DEV_TOKEN=$(docker exec --user 1000 "$GITEA_CONTAINER" gitea admin user generate-access-token \
+	--username "$E2E_DEV_USER" \
+	--token-name "e2e-$(date +%s)" \
+	--scopes "write:issue,read:repository,read:user" \
+	--raw 2>/dev/null)
+if [ -z "$DEV_TOKEN" ]; then
+	echo "ERROR: failed to generate developer API token"
+	exit 1
+fi
+
 cat >"$E2E_DIR/.env.secrets" <<EOF
 ATLANTIS_GITEA_TOKEN=${TOKEN}
+E2E_DEV_TOKEN=${DEV_TOKEN}
 EOF
-echo "      written to .env.secrets"
+echo "      tokens written to .env.secrets"
 
 echo "[4/6] Creating repository ${TEST_REPO} …"
 HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
@@ -58,7 +79,10 @@ HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
 case "$HTTP_CODE" in
 201) echo "      repository created" ;;
 409) echo "      repository already exists" ;;
-*) echo "      WARNING: unexpected HTTP ${HTTP_CODE}" ;;
+*)
+	echo "ERROR: unexpected HTTP ${HTTP_CODE} creating repository"
+	exit 1
+	;;
 esac
 
 echo "[5/6] Pushing fixture files …"
@@ -87,7 +111,19 @@ cp -r "$E2E_DIR/fixtures/"* "$WORK_DIR/repo/"
 )
 
 echo "[6/6] Creating webhook → Atlantis …"
-HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+# Re-running setup must not add a second webhook, or Atlantis would receive
+# every event twice. Only "pull_request_only" (opened/closed/...) and
+# "pull_request_comment" (Gitea does not send "issue_comment" for comments on
+# pull requests) are subscribed: Gitea also sends a sync event when a pull
+# request is opened,
+# which Atlantis handles as a second "opened" event and races the first
+# autoplan. Scenarios that push more commits comment "atlantis plan" instead.
+if curl -sf "${GITEA_URL}/api/v1/repos/${GITEA_ADMIN_USER}/${TEST_REPO}/hooks" \
+	-H "Authorization: token ${TOKEN}" | grep -q 'http://atlantis:4141/events'; then
+	echo "      webhook already exists"
+	HTTP_CODE=201
+else
+	HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
 	"${GITEA_URL}/api/v1/repos/${GITEA_ADMIN_USER}/${TEST_REPO}/hooks" \
 	-H "Content-Type: application/json" \
 	-H "Authorization: token ${TOKEN}" \
@@ -98,12 +134,17 @@ HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
       \"content_type\":\"json\",
       \"secret\":\"${WEBHOOK_SECRET}\"
     },
-    \"events\":[\"pull_request\",\"pull_request_comment\",\"issue_comment\"],
+    \"events\":[\"pull_request_only\",\"pull_request_comment\"],
     \"active\":true
   }")
+	[ "$HTTP_CODE" != 201 ] || echo "      webhook created"
+fi
 case "$HTTP_CODE" in
-201) echo "      webhook created" ;;
-*) echo "      webhook already exists or HTTP ${HTTP_CODE}" ;;
+201) ;;
+*)
+	echo "ERROR: unexpected HTTP ${HTTP_CODE} creating webhook"
+	exit 1
+	;;
 esac
 
 echo ""
