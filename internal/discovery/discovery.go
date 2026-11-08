@@ -443,6 +443,15 @@ func matchesPathFilter(pattern, stackDir string) (bool, error) {
 	}
 
 	normalizedDir := filepath.ToSlash(strings.TrimPrefix(stackDir, "/"))
+	if normalizedDir == RootDir {
+		// "." is a placeholder for the root, not a directory named ".":
+		// only the pattern "." or one matching the empty path ("**")
+		// selects the root stack. Otherwise ".*" or "?" would match it.
+		if normalizedPattern == RootDir {
+			return true, nil
+		}
+		normalizedDir = ""
+	}
 	if !strings.Contains(normalizedPattern, "**") {
 		return path.Match(normalizedPattern, normalizedDir)
 	}

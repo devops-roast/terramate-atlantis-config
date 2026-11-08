@@ -125,6 +125,25 @@ func TestPathFilterNormalizationAndWildcards(t *testing.T) {
 		}
 	}
 
+	// The root stack's dir "." is a placeholder, not a directory named ".":
+	// only "." itself (or a pattern matching the empty path, such as "**")
+	// selects it, so excluding hidden dirs with ".*" keeps the root stack.
+	for _, tc := range []struct {
+		pattern string
+		want    bool
+	}{
+		{".", true}, {"./", true}, {"**", true}, {"**/*", true},
+		{".*", false}, {"?", false}, {"[.]", false}, {"**/.*", false}, {"\\.", false},
+	} {
+		got, err := matchesPathOrParent(tc.pattern, RootDir)
+		if err != nil {
+			t.Fatalf("matchesPathOrParent(%q, root): %v", tc.pattern, err)
+		}
+		if got != tc.want {
+			t.Errorf("matchesPathOrParent(%q, root) = %v, want %v", tc.pattern, got, tc.want)
+		}
+	}
+
 	if _, err := matchesPathFilter("**/[a", "x"); err == nil {
 		t.Errorf("malformed class in a ** pattern must be an error, as it is without **")
 	}

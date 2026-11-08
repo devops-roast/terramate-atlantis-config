@@ -194,7 +194,7 @@ Logs go to stderr and never mix with the generated config on stdout.
 | `--exclude-tags` |         | Exclude stacks with these tags                                    |
 | `--exclude-path` |         | Exclude stacks at or under directories matching this glob         |
 
-Path filters are globs matched against each stack's directory and its parent directories, so a pattern selects everything nested under what it matches: `infra` selects `infra`, `infra/vpc` and `infra/vpc/subnet`, and `*/vpc` selects `prod/vpc` and `prod/vpc/subnet`. `*` matches within one path segment, and `**` matches any number of segments, including none (`**/vpc` also selects a top-level `vpc`). `?`, `[...]` classes and `\` escapes follow Go's [`path.Match`](https://pkg.go.dev/path#Match) (on Windows, `\` is a path separator instead). Patterns are relative to `--root`: `infra`, `/infra`, `./infra` and `infra/` are the same filter.
+Path filters are globs matched against each stack's directory and its parent directories, so a pattern selects everything nested under what it matches: `infra` selects `infra`, `infra/vpc` and `infra/vpc/subnet`, and `*/vpc` selects `prod/vpc` and `prod/vpc/subnet`. `*` matches within one path segment, and `**` matches any number of segments, including none (`**/vpc` also selects a top-level `vpc`). `?`, `[...]` classes and `\` escapes follow Go's [`path.Match`](https://pkg.go.dev/path#Match) (on Windows, `\` is a path separator instead). Patterns are relative to `--root`: `infra`, `/infra`, `./infra` and `infra/` are the same filter. A stack at the root itself is selected by `.` and by patterns that match any path, such as `**`; it has no directory name, so `.*` or `?` don't select it.
 
 **Naming**
 
