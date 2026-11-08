@@ -69,16 +69,18 @@ jobs:
     name: action (${{ matrix.os }}, ${{ matrix.install }})
     if: ${{ !startsWith(github.head_ref, 'release-please--') }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
         install: [release, source]
     env:
-      # "source" builds this commit with `go install`; fetch it straight from
-      # GitHub because the module proxy may not have it yet.
-      GOPROXY: direct
-      GONOSUMDB: github.com/devops-roast/*
+      # "source" builds this commit with `go install`. Fetch this module
+      # straight from GitHub (the module proxy may not have the commit yet);
+      # dependencies still come through the proxy.
+      GOPRIVATE: github.com/devops-roast/*
+      GIT_TERMINAL_PROMPT: "0"
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-go@v6

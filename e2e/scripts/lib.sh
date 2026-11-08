@@ -180,6 +180,27 @@ assert_no_errors() {
 	assert_comment_not_contains "**Plan Error**" "**Plan Failed**" "**Apply Error**" "**Apply Failed**" "Error: "
 }
 
+# generated_config: print the atlantis.yaml that the pre-workflow hook wrote
+# for the current pull request inside the Atlantis container.
+generated_config() {
+	docker exec "${ATLANTIS_CONTAINER:-e2e-atlantis}" cat \
+		"/home/atlantis/.atlantis/repos/${GITEA_ADMIN_USER}/${TEST_REPO}/${PR_NUMBER}/default/atlantis.yaml"
+}
+
+# assert_generated_contains TEXT: the generated atlantis.yaml contains TEXT
+# (may span several lines).
+assert_generated_contains() {
+	local config
+	config=$(generated_config) || fail "cannot read the generated atlantis.yaml"
+	case "$config" in
+	*"$1"*) pass "generated atlantis.yaml contains the expected block" ;;
+	*)
+		printf '%s\n--- expected block:\n%s\n' "$config" "$1" >&2
+		fail "generated atlantis.yaml does not contain the expected block"
+		;;
+	esac
+}
+
 # close_pr: release the pull request's Atlantis locks and close it. Atlantis
 # does not treat Gitea's "closed" event as a close, so the locks are released
 # explicitly with `atlantis unlock`; otherwise later scenarios touching the same

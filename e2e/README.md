@@ -49,6 +49,10 @@ EOF
 }
 ```
 
+`assert_generated_contains` checks the `atlantis.yaml` the hook generated for
+the pull request (read from the Atlantis container), for settings that do not
+show up in comments such as `depends_on`.
+
 Each scenario runs in its own subshell; any failing command or assertion fails
 it. Its pull request is unlocked and closed afterwards, so scenarios should
 touch different stacks or rely on that cleanup. Pushing more commits to an
