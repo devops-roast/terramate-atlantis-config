@@ -3,7 +3,7 @@ services:
   # Gitea — lightweight Git server (SQLite, no external DB needed)
   # ---------------------------------------------------------------------------
   gitea:
-    image: gitea/gitea:1.22
+    image: gitea/gitea:28.3
     container_name: e2e-gitea
     environment:
       # Use SQLite to avoid needing a separate database container
