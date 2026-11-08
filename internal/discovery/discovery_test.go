@@ -494,3 +494,32 @@ func TestDiscoverPathFiltersIncludeNestedStacks(t *testing.T) {
 		t.Fatalf("--exclude-path infra/vpc: got %v, want %v", got, want)
 	}
 }
+
+// Errors only fail the run for selected stacks: excluding a stack with
+// invalid globals, by path or by tag, must work like --filter-path does.
+func TestDiscoverExcludedStackWithInvalidGlobals(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "terramate.tm.hcl"), "terramate {}\n")
+	writeFile(t, filepath.Join(root, "good/stack.tm.hcl"), "stack {}\n")
+	writeFile(t, filepath.Join(root, "bad/stack.tm.hcl"), "stack {\n  tags = [\"bad\"]\n}\n\nglobals {\n  atlantis_workflow = 1\n}\n")
+
+	for name, opts := range map[string]DiscoverOptions{
+		"filter-path":  {RootDir: root, PathFilter: "good"},
+		"exclude-path": {RootDir: root, ExcludePath: "bad"},
+		"exclude-tags": {RootDir: root, ExcludeTags: "bad"},
+	} {
+		result, err := Discover(opts)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if len(result.Stacks) != 1 || result.Stacks[0].Dir != "good" {
+			t.Fatalf("%s: got %#v", name, result.Stacks)
+		}
+	}
+
+	if _, err := Discover(DiscoverOptions{RootDir: root}); err == nil {
+		t.Fatal("a selected stack with invalid globals must still fail")
+	}
+}

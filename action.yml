@@ -130,7 +130,9 @@ runs:
         if [ "$CHECK" = "true" ]; then
           cmd+=(--check)
         fi
-        read -r -a extra <<<"$ARGS"
+        # Split on any whitespace, including newlines from a multi-line
+        # `args: |` block (read stops at the first newline without -d '').
+        read -r -d '' -a extra <<<"$ARGS" || true
         cmd+=(${extra[@]+"${extra[@]}"})
 
         echo "+ ${cmd[*]}"
@@ -147,9 +149,11 @@ runs:
         set -uo pipefail
 
         # Render the same configuration as JSON on stdout, so the count works
-        # in every mode (including --check, which writes nothing).
-        read -r -a extra <<<"$ARGS"
-        if ! json=$(terramate-atlantis-config generate --root "$ROOT" ${extra[@]+"${extra[@]}"} --output - --format json 2>/dev/null); then
+        # in every mode (including --check, which writes nothing). --check and
+        # --diff from `args` are turned off: they require an output file.
+        read -r -d '' -a extra <<<"$ARGS" || true
+        if ! json=$(terramate-atlantis-config generate --root "$ROOT" ${extra[@]+"${extra[@]}"} \
+          --output - --format json --check=false --diff=false 2>/dev/null); then
           echo "::warning::could not count generated projects"
           echo "projects=0" >>"$GITHUB_OUTPUT"
           exit 0

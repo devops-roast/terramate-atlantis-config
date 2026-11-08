@@ -89,8 +89,9 @@ echo "[5/6] Pushing fixture files …"
 WORK_DIR=$(mktemp -d)
 trap 'rm -rf "$WORK_DIR"' EXIT
 
+# Same URL as GITEA_URL (which may use another host port), with credentials.
 git clone \
-	"http://${GITEA_ADMIN_USER}:${GITEA_ADMIN_PASS}@localhost:3000/${GITEA_ADMIN_USER}/${TEST_REPO}.git" \
+	"${GITEA_URL/:\/\//://${GITEA_ADMIN_USER}:${GITEA_ADMIN_PASS}@}/${GITEA_ADMIN_USER}/${TEST_REPO}.git" \
 	"$WORK_DIR/repo" 2>/dev/null
 
 cp -r "$E2E_DIR/fixtures/"* "$WORK_DIR/repo/"
@@ -151,4 +152,4 @@ echo ""
 echo "=== Setup complete ==="
 echo "  Gitea UI : ${GITEA_URL}"
 echo "  Repo     : ${GITEA_URL}/${GITEA_ADMIN_USER}/${TEST_REPO}"
-echo "  Atlantis : http://localhost:4141"
+echo "  Atlantis : ${ATLANTIS_URL:-http://localhost:4141}"

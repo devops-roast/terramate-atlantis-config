@@ -250,7 +250,13 @@ func TestUnknownKeysRejected(t *testing.T) {
 func TestEmptyConfigFile(t *testing.T) {
 	t.Parallel()
 
-	for name, content := range map[string]string{"empty": "", "comment only": "# nothing here\n"} {
+	for name, content := range map[string]string{
+		"empty":                  "",
+		"comment only":           "# nothing here\n",
+		"document start only":    "---\n# output: atlantis.yaml\n",
+		"explicit null document": "--- ~\n",
+		"document start and end": "---\n...\n",
+	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 

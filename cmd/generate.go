@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 
@@ -128,6 +129,30 @@ supported via Terramate globals (atlantis_skip, atlantis_workflow, etc).`,
 	return generateCmd
 }
 
+// normalizeGenerateOptions trims list values and drops empty entries, so
+// "--apply-requirements 'approved, mergeable'" means the same as the config
+// file list [approved, mergeable]. An empty list stays empty (not nil): it is
+// an explicit value, e.g. --workflow-disable-safeguards= keeps every
+// safeguard.
+func normalizeGenerateOptions(opts *GenerateOptions) {
+	opts.WhenModified = cleanList(opts.WhenModified)
+	opts.ApplyRequirements = cleanList(opts.ApplyRequirements)
+	opts.WorkflowDisableSafeguards = cleanList(opts.WorkflowDisableSafeguards)
+}
+
+func cleanList(values []string) []string {
+	if values == nil {
+		return nil
+	}
+	cleaned := make([]string, 0, len(values))
+	for _, v := range values {
+		if v = strings.TrimSpace(v); v != "" {
+			cleaned = append(cleaned, v)
+		}
+	}
+	return cleaned
+}
+
 // validateGenerateOptions checks option values after flags and the config
 // file have been merged, so values coming from either source are validated.
 func validateGenerateOptions(opts *GenerateOptions) error {
@@ -179,6 +204,7 @@ func runGenerate(cmd *cobra.Command, opts *GenerateOptions) error {
 		return err
 	}
 
+	normalizeGenerateOptions(opts)
 	if err := validateGenerateOptions(opts); err != nil {
 		return err
 	}
@@ -216,6 +242,7 @@ func runGenerate(cmd *cobra.Command, opts *GenerateOptions) error {
 		ExcludePath: opts.ExcludePath,
 		Changed:     opts.Changed,
 		BaseRef:     opts.ChangedBaseRef,
+		Warnf:       warnf,
 	})
 	if err != nil {
 		return fmt.Errorf("discovering stacks: %w", err)
@@ -239,7 +266,7 @@ func runGenerate(cmd *cobra.Command, opts *GenerateOptions) error {
 		ProjectNameStrategy:  opts.ProjectNameStrategy,
 		ProjectNamePrefix:    opts.ProjectNamePrefix,
 		ProjectNameDepth:     opts.ProjectNameDepth,
-		NamingStacks:         discovered.AllStacks,
+		AllStacks:            discovered.AllStacks,
 		Warnf:                warnf,
 	})
 	if err != nil {
@@ -319,6 +346,12 @@ func buildWorkflows(opts *GenerateOptions, warnf func(string, ...any)) (map[stri
 		if o.Winner == atlantis.SourceGenerated && o.Replaced == atlantis.SourcePreserved {
 			continue
 		}
+		// With --preserve-workflows the existing file holds the config file
+		// workflows written by the previous run; replacing an identical copy
+		// is not an override.
+		if o.Replaced == atlantis.SourcePreserved && reflect.DeepEqual(preserved[o.Name], merged[o.Name]) {
+			continue
+		}
 		warnf("workflow %q from the %s overrides the one from the %s", o.Name, o.Winner, o.Replaced)
 	}
 	return merged, nil
@@ -351,8 +384,10 @@ func compareWithExisting(stdout, stderr io.Writer, opts *GenerateOptions, genera
 		if missing {
 			state = "does not exist"
 		}
-		fmt.Fprintf(stderr, "%s %s, run 'terramate-atlantis-config generate --output %s' to update\n",
-			opts.Output, state, opts.Output)
+		// The other flags (--root, --format, filters, ...) shape the output
+		// too, so point at the same command rather than a fixed one.
+		fmt.Fprintf(stderr, "%s %s, run the same command without --check and --diff to update it\n",
+			opts.Output, state)
 	}
 
 	return &ExitError{Code: 1}
@@ -426,10 +461,12 @@ func mergeConfig(cmd *cobra.Command, opts *GenerateOptions, cfg *internalconfig.
 	if !cmd.Flags().Changed("depends-on") && cfg.DependsOn != nil {
 		opts.DependsOn = *cfg.DependsOn
 	}
-	if !cmd.Flags().Changed("when-modified") && len(cfg.WhenModified) > 0 {
+	// Lists are copied when set, even if empty: `when_modified: []` is an
+	// explicit value, like --when-modified=.
+	if !cmd.Flags().Changed("when-modified") && cfg.WhenModified != nil {
 		opts.WhenModified = append([]string(nil), cfg.WhenModified...)
 	}
-	if !cmd.Flags().Changed("apply-requirements") && len(cfg.ApplyRequirements) > 0 {
+	if !cmd.Flags().Changed("apply-requirements") && cfg.ApplyRequirements != nil {
 		opts.ApplyRequirements = append([]string(nil), cfg.ApplyRequirements...)
 	}
 	if !cmd.Flags().Changed("tag-workflow") && len(cfg.TagWorkflows) > 0 {

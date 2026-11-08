@@ -141,6 +141,25 @@ jobs:
           PROJECTS: ${{ steps.check.outputs.projects }}
         run: test "$PROJECTS" = 3
 
+      # A multi-line `args` block must be split on newlines too (with only
+      # the first line, --sort-by would have no value), and --diff in `args`
+      # must not break the project count.
+      - name: Check with multi-line args
+        id: multiline
+        uses: ./
+        with:
+          version: ${{ steps.generate.outputs.version }}
+          root: testdata/multi
+          output: ${{ env.OUTPUT }}
+          check: "true"
+          args: |
+            --diff --sort-by
+            dir
+      - name: Assert multi-line args outputs
+        env:
+          PROJECTS: ${{ steps.multiline.outputs.projects }}
+        run: test "$PROJECTS" = 3
+
       - name: Make output stale
         run: echo "# stale" >>"$OUTPUT"
       - name: Check (stale)

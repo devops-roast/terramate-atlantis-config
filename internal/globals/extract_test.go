@@ -149,3 +149,23 @@ func TestExtractAtlantisGlobals(t *testing.T) {
 		})
 	}
 }
+
+func TestExtractAtlantisGlobalsReportsUnknownKeys(t *testing.T) {
+	t.Parallel()
+
+	got, err := ExtractAtlantisGlobals(map[string]cty.Value{
+		"atlantis_workflows": cty.StringVal("typo"),
+		"atlantis_skp":       cty.True,
+		"atlantis_workflow":  cty.StringVal("prod"),
+		"other_global":       cty.StringVal("ignored"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"atlantis_skp", "atlantis_workflows"}; !reflect.DeepEqual(got.UnknownKeys, want) {
+		t.Fatalf("UnknownKeys: got %v, want %v", got.UnknownKeys, want)
+	}
+	if got.Workflow != "prod" {
+		t.Fatalf("known keys must still be read, got workflow %q", got.Workflow)
+	}
+}

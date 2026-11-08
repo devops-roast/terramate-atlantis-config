@@ -28,6 +28,39 @@ func TestValidateConfig(t *testing.T) {
 			want: []string{},
 		},
 		{
+			name: "dirs outside the repository",
+			cfg: atlantis.Config{
+				Version: 3,
+				Projects: []atlantis.Project{
+					{Dir: "../a"},
+					{Dir: "a/../../b"},
+					{Dir: "a..b"},
+				},
+			},
+			want: []string{
+				`projects[0]: dir "../a" must not contain '..'`,
+				`projects[1]: dir "a/../../b" must not contain '..'`,
+			},
+		},
+		{
+			name: "dirs that differ only in spelling are the same dir",
+			cfg: atlantis.Config{
+				Version: 3,
+				Projects: []atlantis.Project{
+					{Dir: "stacks/a"},
+					{Dir: "./stacks/a"},
+					{Dir: "stacks/a/"},
+					{Dir: "."},
+					{Dir: "./"},
+				},
+			},
+			want: []string{
+				"duplicate project dir: ./stacks/a (workspace default); projects sharing a dir and workspace must all have a name",
+				"duplicate project dir: stacks/a/ (workspace default); projects sharing a dir and workspace must all have a name",
+				"duplicate project dir: ./ (workspace default); projects sharing a dir and workspace must all have a name",
+			},
+		},
+		{
 			name: "same dir with different workspaces is allowed",
 			cfg: atlantis.Config{
 				Version: 3,
@@ -98,7 +131,7 @@ func TestValidateConfig(t *testing.T) {
 			},
 		},
 		{
-			name: "invalid names, missing dir, wrong version, unknown workflow",
+			name: "invalid names, missing dir, wrong version",
 			cfg: atlantis.Config{
 				Version: 2,
 				Projects: []atlantis.Project{
@@ -113,7 +146,6 @@ func TestValidateConfig(t *testing.T) {
 				"invalid project name: my stack (must contain only URL safe characters)",
 				"projects[1]: dir is required",
 				"duplicate project name: ok",
-				`project "b" references unknown workflow "nope"`,
 			},
 		},
 	}

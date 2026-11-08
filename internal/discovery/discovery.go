@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/terramate-io/terramate/config"
 	"github.com/terramate-io/terramate/git"
@@ -27,6 +28,10 @@ type DiscoverOptions struct {
 	ExcludePath string
 	Changed     bool
 	BaseRef     string
+
+	// Warnf receives non-fatal warnings, such as unknown atlantis_*
+	// globals. A nil Warnf discards them.
+	Warnf func(format string, args ...any)
 }
 
 // StackInfo contains discovered stack metadata and atlantis overrides.
@@ -62,8 +67,10 @@ type Result struct {
 	// Stacks are the stacks selected by the filters, with full metadata.
 	Stacks []StackInfo
 	// AllStacks lists every stack in the repository (name, ID, description,
-	// dir, tags and skip only), regardless of filters. It gives project naming
-	// a stable context so names don't depend on which stacks a run selected.
+	// dir, tags, resolved ordering and skip only), regardless of filters. It
+	// gives project naming a stable context, so names don't depend on which
+	// stacks a run selected, and lets ordering be followed through stacks
+	// that were not selected.
 	AllStacks []StackInfo
 }
 
@@ -89,17 +96,28 @@ func Discover(opts DiscoverOptions) (Result, error) {
 		return Result{}, fmt.Errorf("loading stacks: %w", err)
 	}
 
-	type stackOverrides struct {
-		overrides globalsExtract.AtlantisOverrides
-		err       error
-	}
+	// Keyed by StackInfo.Dir.
 	overridesByDir := make(map[string]stackOverrides, len(stacks))
 
+	orderByDir := make(map[string]stackOrder, len(stacks))
 	allStacks := make([]StackInfo, 0, len(stacks))
 	for _, sortable := range stacks {
 		stack := sortable.Stack
 		overrides, err := atlantisOverrides(root, stack)
-		overridesByDir[stack.Dir.String()] = stackOverrides{overrides: overrides, err: err}
+		overridesByDir[normalizeStackPath(stack.Dir.String())] = stackOverrides{overrides: overrides, err: err}
+
+		// Resolved once per stack: resolving logs Terramate warnings (e.g.
+		// for a path that doesn't exist), which must not repeat.
+		order := resolveOrder(root, stack)
+		orderByDir[normalizeStackPath(stack.Dir.String())] = order
+
+		// Errors only fail the run for selected stacks (below); here a stack
+		// whose globals or order entries can't be read is simply not
+		// skipped and has no ordering.
+		afterDirs, beforeDirs := order.afterDirs, order.beforeDirs
+		if order.err != nil {
+			afterDirs, beforeDirs = nil, nil
+		}
 
 		allStacks = append(allStacks, StackInfo{
 			Name:        stack.Name,
@@ -107,9 +125,9 @@ func Discover(opts DiscoverOptions) (Result, error) {
 			Description: stack.Description,
 			Dir:         normalizeStackPath(stack.Dir.String()),
 			Tags:        append([]string(nil), stack.Tags...),
-			// Errors only fail the run for selected stacks (below); here a
-			// stack whose globals can't be read is simply not skipped.
-			Skip: err == nil && overrides.Skip,
+			AfterDirs:   afterDirs,
+			BeforeDirs:  beforeDirs,
+			Skip:        err == nil && overrides.Skip,
 		})
 	}
 	sort.Slice(allStacks, func(i, j int) bool {
@@ -187,20 +205,32 @@ func Discover(opts DiscoverOptions) (Result, error) {
 			}
 		}
 
-		stored := overridesByDir[stack.Dir.String()]
+		// Exclusions apply before anything about the stack is evaluated, so
+		// an excluded stack can't fail the run (e.g. with invalid globals).
+		if _, excluded := excludedPaths[stackDir]; excluded {
+			continue
+		}
+		if opts.ExcludePath != "" {
+			matched, err := matchesPathOrParent(opts.ExcludePath, stackDir)
+			if err != nil {
+				return Result{}, fmt.Errorf("matching exclude path filter %q for stack %q: %w", opts.ExcludePath, stackDir, err)
+			}
+			if matched {
+				continue
+			}
+		}
+
+		stored := overridesByDir[stackDir]
 		if stored.err != nil {
 			return Result{}, stored.err
 		}
 		overrides := stored.overrides
 
-		afterDirs, err := resolveOrderEntries(root, stack, stack.After)
-		if err != nil {
-			return Result{}, fmt.Errorf("resolving stack.after for stack %q: %w", stack.Dir.String(), err)
+		order := orderByDir[stackDir]
+		if order.err != nil {
+			return Result{}, order.err
 		}
-		beforeDirs, err := resolveOrderEntries(root, stack, stack.Before)
-		if err != nil {
-			return Result{}, fmt.Errorf("resolving stack.before for stack %q: %w", stack.Dir.String(), err)
-		}
+		afterDirs, beforeDirs := order.afterDirs, order.beforeDirs
 
 		discovered = append(discovered, StackInfo{
 			Name:              stack.Name,
@@ -222,33 +252,45 @@ func Discover(opts DiscoverOptions) (Result, error) {
 		})
 	}
 
-	if opts.ExcludeTags != "" || opts.ExcludePath != "" {
-		filtered := make([]StackInfo, 0, len(discovered))
-		for _, stack := range discovered {
-			if _, excluded := excludedPaths[stack.Dir]; excluded {
-				continue
-			}
-
-			if opts.ExcludePath != "" {
-				matched, err := matchesPathOrParent(opts.ExcludePath, stack.Dir)
-				if err != nil {
-					return Result{}, fmt.Errorf("matching exclude path filter %q for stack %q: %w", opts.ExcludePath, stack.Dir, err)
-				}
-				if matched {
-					continue
-				}
-			}
-
-			filtered = append(filtered, stack)
-		}
-		discovered = filtered
-	}
-
 	sort.Slice(discovered, func(i, j int) bool {
 		return discovered[i].Dir < discovered[j].Dir
 	})
 
+	if opts.Warnf != nil {
+		warnUnknownGlobals(discovered, overridesByDir, opts.Warnf)
+	}
+
 	return Result{Stacks: discovered, AllStacks: allStacks}, nil
+}
+
+// warnUnknownGlobals reports atlantis_* globals that the generator does not
+// read, usually typos (atlantis_workflows), once per global, naming the
+// selected stacks that see it. Globals are inherited, so one typo in a
+// parent directory reaches many stacks.
+func warnUnknownGlobals(stacks []StackInfo, overrides map[string]stackOverrides, warnf func(string, ...any)) {
+	dirsByKey := map[string][]string{}
+	for _, stack := range stacks {
+		for _, key := range overrides[stack.Dir].overrides.UnknownKeys {
+			dirsByKey[key] = append(dirsByKey[key], stack.Dir)
+		}
+	}
+
+	keys := make([]string, 0, len(dirsByKey))
+	for key := range dirsByKey {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	const maxListed = 3
+	for _, key := range keys {
+		dirs := dirsByKey[key]
+		where := strings.Join(dirs, ", ")
+		if len(dirs) > maxListed {
+			where = fmt.Sprintf("%s and %d more", strings.Join(dirs[:maxListed], ", "), len(dirs)-maxListed)
+		}
+		warnf("unknown global %q (stacks: %s) is ignored; known atlantis globals: %s",
+			key, where, strings.Join(globalsExtract.KnownGlobals, ", "))
+	}
 }
 
 // atlantisOverrides evaluates a stack's globals and extracts the atlantis_*
@@ -268,6 +310,25 @@ func atlantisOverrides(root *config.Root, stack *config.Stack) (globalsExtract.A
 		return globalsExtract.AtlantisOverrides{}, fmt.Errorf("extracting atlantis globals for stack %q: %w", stack.Dir.String(), err)
 	}
 	return overrides, nil
+}
+
+// stackOrder is a stack's resolved stack.after and stack.before entries.
+type stackOrder struct {
+	afterDirs  []string
+	beforeDirs []string
+	err        error
+}
+
+func resolveOrder(root *config.Root, stack *config.Stack) stackOrder {
+	afterDirs, err := resolveOrderEntries(root, stack, stack.After)
+	if err != nil {
+		return stackOrder{err: fmt.Errorf("resolving stack.after for stack %q: %w", stack.Dir.String(), err)}
+	}
+	beforeDirs, err := resolveOrderEntries(root, stack, stack.Before)
+	if err != nil {
+		return stackOrder{err: fmt.Errorf("resolving stack.before for stack %q: %w", stack.Dir.String(), err)}
+	}
+	return stackOrder{afterDirs: afterDirs, beforeDirs: beforeDirs}
 }
 
 // resolveOrderEntries resolves stack.after / stack.before entries to stack
@@ -370,44 +431,63 @@ func matchesPathOrParent(pattern, stackDir string) (bool, error) {
 
 // matchesPathFilter reports whether pattern matches stackDir itself.
 func matchesPathFilter(pattern, stackDir string) (bool, error) {
-	normalizedPattern := filepath.ToSlash(strings.TrimPrefix(pattern, "/"))
+	normalizedPattern := normalizePathPattern(pattern)
 	if normalizedPattern == "" {
 		return true, nil
 	}
 
 	normalizedDir := filepath.ToSlash(strings.TrimPrefix(stackDir, "/"))
-	if strings.HasSuffix(normalizedPattern, "/**") {
-		prefix := strings.TrimSuffix(normalizedPattern, "/**")
-		if normalizedDir == prefix {
-			return true, nil
-		}
-		return strings.HasPrefix(normalizedDir, prefix+"/"), nil
+	if !strings.Contains(normalizedPattern, "**") {
+		return path.Match(normalizedPattern, normalizedDir)
 	}
 
-	if strings.Contains(normalizedPattern, "**") {
-		re, err := regexp.Compile(globToRegexp(normalizedPattern))
-		if err != nil {
-			return false, err
-		}
-		return re.MatchString(normalizedDir), nil
+	expr, err := globToRegexp(normalizedPattern)
+	if err != nil {
+		return false, err
 	}
-
-	return path.Match(normalizedPattern, normalizedDir)
+	re, err := regexp.Compile(expr)
+	if err != nil {
+		return false, err
+	}
+	return re.MatchString(normalizedDir), nil
 }
 
-func globToRegexp(glob string) string {
+// normalizePathPattern makes a path filter relative to the project root and
+// drops redundant separators and "." segments, so "infra", "/infra",
+// "./infra" and "infra/" are the same filter. It returns "" (no filter) for
+// an empty pattern or "/". "." stays "." and matches the root stack.
+func normalizePathPattern(pattern string) string {
+	p := filepath.ToSlash(pattern)
+	if p == "" {
+		return ""
+	}
+	return strings.TrimPrefix(path.Clean(p), "/")
+}
+
+// globToRegexp translates a path glob containing "**" into a regular
+// expression. Everything except "**" follows path.Match: '*' and '?' stay
+// within one segment, '[...]' is a character class ('^' negates it) and '\\'
+// escapes the next character. "**" as a whole segment matches any number of
+// segments, including none: "**/vpc" matches "vpc", "a/**/b" matches "a/b"
+// and "a/**" matches "a". Elsewhere "**" matches any run of characters.
+func globToRegexp(glob string) (string, error) {
 	var b strings.Builder
-	b.WriteString("^")
+	b.WriteString("(?s)^")
 
 	for i := 0; i < len(glob); i++ {
-		ch := glob[i]
-		switch ch {
+		switch ch := glob[i]; ch {
+		case '/':
+			if glob[i:] == "/**" {
+				b.WriteString("(?:/.*)?")
+				i = len(glob)
+				continue
+			}
+			b.WriteByte('/')
 		case '*':
 			if i+1 < len(glob) && glob[i+1] == '*' {
 				i++
 				if i+1 < len(glob) && glob[i+1] == '/' {
-					// "**/" matches zero or more whole directories, so
-					// "**/vpc" matches "vpc" and "a/**/b" matches "a/b".
+					// "**/" matches zero or more whole directories.
 					b.WriteString("(?:.*/)?")
 					i++
 				} else {
@@ -418,14 +498,105 @@ func globToRegexp(glob string) string {
 			}
 		case '?':
 			b.WriteString("[^/]")
-		case '.', '+', '(', ')', '|', '^', '$', '{', '}', '[', ']', '\\':
-			b.WriteByte('\\')
-			b.WriteByte(ch)
+		case '[':
+			class, n, err := globClassToRegexp(glob[i:])
+			if err != nil {
+				return "", err
+			}
+			b.WriteString(class)
+			i += n - 1
+		case '\\':
+			if i+1 == len(glob) {
+				return "", path.ErrBadPattern
+			}
+			i++
+			fallthrough
 		default:
-			b.WriteByte(ch)
+			r, size := utf8.DecodeRuneInString(glob[i:])
+			b.WriteString(regexp.QuoteMeta(string(r)))
+			i += size - 1
 		}
 	}
 
 	b.WriteString("$")
-	return b.String()
+	return b.String(), nil
+}
+
+// globClassToRegexp translates the path.Match character class at the start
+// of glob ("[...]") into a regular expression and returns how many bytes of
+// glob it used. Malformed classes return path.ErrBadPattern, as path.Match
+// does.
+func globClassToRegexp(glob string) (expr string, n int, err error) {
+	rest := glob[1:]
+	negated := strings.HasPrefix(rest, "^")
+	if negated {
+		rest = rest[1:]
+	}
+
+	var ranges strings.Builder
+	count := 0
+	for {
+		if strings.HasPrefix(rest, "]") && count > 0 {
+			rest = rest[1:]
+			break
+		}
+		var lo, hi rune
+		if lo, rest, err = classChar(rest); err != nil {
+			return "", 0, err
+		}
+		hi = lo
+		if rest[0] == '-' {
+			if hi, rest, err = classChar(rest[1:]); err != nil {
+				return "", 0, err
+			}
+		}
+		// path.Match accepts an inverted range and never matches it;
+		// regexp would reject it.
+		if lo <= hi {
+			fmt.Fprintf(&ranges, `\x{%x}-\x{%x}`, lo, hi)
+		}
+		count++
+	}
+
+	used := len(glob) - len(rest)
+	switch {
+	// Like path.Match, a negated class also matches '/'.
+	case ranges.Len() == 0 && negated:
+		return `.`, used, nil
+	case ranges.Len() == 0:
+		return `[^\x{0}-\x{10ffff}]`, used, nil // matches nothing
+	case negated:
+		return `[^` + ranges.String() + `]`, used, nil
+	default:
+		return `[` + ranges.String() + `]`, used, nil
+	}
+}
+
+// classChar reads one (possibly escaped) character of a character class,
+// with path.Match's rules for what is malformed.
+func classChar(chunk string) (r rune, rest string, err error) {
+	if chunk == "" || chunk[0] == '-' || chunk[0] == ']' {
+		return 0, "", path.ErrBadPattern
+	}
+	if chunk[0] == '\\' {
+		chunk = chunk[1:]
+		if chunk == "" {
+			return 0, "", path.ErrBadPattern
+		}
+	}
+	r, size := utf8.DecodeRuneInString(chunk)
+	if r == utf8.RuneError && size == 1 {
+		return 0, "", path.ErrBadPattern
+	}
+	rest = chunk[size:]
+	if rest == "" {
+		return 0, "", path.ErrBadPattern
+	}
+	return r, rest, nil
+}
+
+// stackOverrides is the result of reading one stack's atlantis_* globals.
+type stackOverrides struct {
+	overrides globalsExtract.AtlantisOverrides
+	err       error
 }

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 	"path"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -112,7 +113,7 @@ func newProjectNamer(stacks []discovery.StackInfo, opts Options) *projectNamer {
 
 	n := &projectNamer{
 		strategy: strategy,
-		prefix:   strings.Trim(opts.ProjectNamePrefix, "/"),
+		prefix:   normalizePrefix(opts.ProjectNamePrefix),
 		depth:    opts.ProjectNameDepth,
 	}
 
@@ -122,6 +123,21 @@ func newProjectNamer(stacks []discovery.StackInfo, opts Options) *projectNamer {
 
 	n.namesByDir = n.buildUniqueNames(stacks)
 	return n
+}
+
+// normalizePrefix cleans --project-name-prefix the way stack dirs are
+// written, so "stacks", "/stacks", "./stacks" and "stacks/" all strip
+// "stacks". "" and "." mean no prefix.
+func normalizePrefix(prefix string) string {
+	prefix = filepath.ToSlash(prefix)
+	if prefix == "" {
+		return ""
+	}
+	prefix = strings.Trim(path.Clean(prefix), "/")
+	if prefix == "." {
+		return ""
+	}
+	return prefix
 }
 
 func (n *projectNamer) nameFor(dir string) string {
@@ -143,10 +159,15 @@ func (n *projectNamer) buildUniqueNames(stacks []discovery.StackInfo) map[string
 		seen[name] = append(seen[name], dir)
 	}
 
+	stackByDir := make(map[string]discovery.StackInfo, len(stacks))
+	for _, s := range stacks {
+		stackByDir[stackDir(s.Dir)] = s
+	}
+
 	result := make(map[string]string, len(stacks))
 	for dir, name := range rawNames {
 		if len(seen[name]) > 1 {
-			result[dir] = disambiguate(dir, seen[name])
+			result[dir] = n.disambiguate(stackByDir, dir, seen[name])
 		} else {
 			result[dir] = name
 		}
@@ -169,19 +190,28 @@ func (n *projectNamer) rawName(stack discovery.StackInfo, dir string) string {
 	}
 }
 
-// disambiguate returns the shortest trailing-segment name for dir that no
-// other dir in conflicting shares.
-func disambiguate(dir string, conflicting []string) string {
-	parts := strings.Split(namingPath(dir), "/")
-
-	for depth := 1; depth <= len(parts); depth++ {
-		candidate := trailingName(dir, depth)
+// disambiguate resolves a collision between the raw names of the dirs in
+// conflicting: starting from the strategy's own name, it adds one parent
+// segment at a time until dir's name differs from every other one, so the
+// result is never shorter than the strategy's name and keeps its form (e.g.
+// the stack name for stack-name). When dir has no parent segments left, it
+// falls back to the full path.
+func (n *projectNamer) disambiguate(stacks map[string]discovery.StackInfo, dir string, conflicting []string) string {
+	for extra := 1; ; extra++ {
+		candidate, ok := n.nameCandidate(stacks[dir], dir, extra)
+		if !ok {
+			return sanitizeProjectName(namingPath(dir))
+		}
 		unique := true
 		for _, other := range conflicting {
 			if other == dir {
 				continue
 			}
-			if candidate == trailingName(other, depth) {
+			otherCandidate, ok := n.nameCandidate(stacks[other], other, extra)
+			if !ok {
+				otherCandidate = sanitizeProjectName(namingPath(other))
+			}
+			if candidate == otherCandidate {
 				unique = false
 				break
 			}
@@ -190,7 +220,42 @@ func disambiguate(dir string, conflicting []string) string {
 			return candidate
 		}
 	}
-	return sanitizeProjectName(namingPath(dir))
+}
+
+// nameCandidate returns the strategy's name for dir with extra more parent
+// segments, and false when the path has fewer segments than that. With
+// extra = 0 it equals rawName.
+func (n *projectNamer) nameCandidate(stack discovery.StackInfo, dir string, extra int) (string, bool) {
+	p := namingPath(dir)
+	parts := strings.Split(p, "/")
+
+	if n.strategy == NameStrategyStackName {
+		parents := parts[:len(parts)-1]
+		need := len(n.stackNameContext(p)) + extra
+		if need > len(parents) {
+			return "", false
+		}
+		context := strings.Join(parents[len(parents)-need:], "/")
+		if context == "" {
+			return sanitizeProjectName(stackNameOf(stack, p)), true
+		}
+		return sanitizeProjectName(context + "/" + stackNameOf(stack, p)), true
+	}
+
+	var base int
+	switch n.strategy {
+	case NameStrategyFull:
+		base = len(parts)
+	case NameStrategyLastN:
+		base = min(n.lastNDepth(), len(parts))
+	default:
+		base = len(strings.Split(n.autoStripPath(p), "/"))
+	}
+	need := base + extra
+	if need > len(parts) {
+		return "", false
+	}
+	return trailingName(dir, need), true
 }
 
 func trailingName(dir string, depth int) string {
@@ -258,7 +323,11 @@ func stripPathPrefix(p, prefix string) string {
 }
 
 func (n *projectNamer) autoStripRaw(dir string) string {
-	p := namingPath(dir)
+	return sanitizeProjectName(n.autoStripPath(namingPath(dir)))
+}
+
+// autoStripPath is p without the explicit or detected common prefix.
+func (n *projectNamer) autoStripPath(p string) string {
 	prefix := n.prefix
 	if prefix == "" {
 		prefix = n.commonPrefix
@@ -270,16 +339,21 @@ func (n *projectNamer) autoStripRaw(dir string) string {
 		// whose children share its path): never strip a name to nothing.
 		stripped = p
 	}
-	return sanitizeProjectName(stripped)
+	return stripped
 }
 
 func (n *projectNamer) stackNameRaw(stack discovery.StackInfo, dir string) string {
 	p := namingPath(dir)
-	stackName := stack.Name
-	if stackName == "" {
-		stackName = path.Base(p)
+	context := n.stackNameContext(p)
+	if len(context) == 0 {
+		return sanitizeProjectName(stackNameOf(stack, p))
 	}
+	return sanitizeProjectName(strings.Join(context, "/") + "/" + stackNameOf(stack, p))
+}
 
+// stackNameContext returns the parent dirs (at most 3, after stripping the
+// explicit prefix) that prefix a stack-name project name.
+func (n *projectNamer) stackNameContext(p string) []string {
 	stripped := p
 	if n.prefix != "" {
 		stripped = stripPathPrefix(p, n.prefix)
@@ -287,24 +361,33 @@ func (n *projectNamer) stackNameRaw(stack discovery.StackInfo, dir string) strin
 
 	parent := path.Dir(stripped)
 	if stripped == "" || parent == "." || parent == "/" {
-		return sanitizeProjectName(stackName)
+		return nil
 	}
 
 	contextParts := strings.Split(parent, "/")
 	if len(contextParts) > 3 {
 		contextParts = contextParts[len(contextParts)-3:]
 	}
+	return contextParts
+}
 
-	return sanitizeProjectName(strings.Join(contextParts, "/") + "/" + stackName)
+// stackNameOf is the stack's name field, or its dir name when unset.
+func stackNameOf(stack discovery.StackInfo, p string) string {
+	if stack.Name != "" {
+		return stack.Name
+	}
+	return path.Base(p)
 }
 
 func (n *projectNamer) lastNRaw(dir string) string {
-	depth := n.depth
-	if depth <= 0 {
-		depth = 3
-	}
+	return trailingName(dir, n.lastNDepth())
+}
 
-	return trailingName(dir, depth)
+func (n *projectNamer) lastNDepth() int {
+	if n.depth <= 0 {
+		return 3
+	}
+	return n.depth
 }
 
 // detectCommonPrefix returns the longest path prefix shared by every stack

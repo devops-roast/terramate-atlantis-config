@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"testing"
 
@@ -147,7 +148,7 @@ func TestCheck(t *testing.T) {
 
 		assert.Equal(t, 1, res.code)
 		assert.Empty(t, res.stdout)
-		assert.Equal(t, out+" is out of date, run 'terramate-atlantis-config generate --output "+out+"' to update\n", res.stderr)
+		assert.Equal(t, out+" is out of date, run the same command without --check and --diff to update it\n", res.stderr)
 		assert.NotContains(t, res.stderr, "Error:")
 		assert.NotContains(t, res.stderr, "Usage:")
 	})
@@ -158,7 +159,7 @@ func TestCheck(t *testing.T) {
 		res := generateTo(t, root, out, "--check")
 
 		assert.Equal(t, 1, res.code)
-		assert.Equal(t, out+" does not exist, run 'terramate-atlantis-config generate --output "+out+"' to update\n", res.stderr)
+		assert.Equal(t, out+" does not exist, run the same command without --check and --diff to update it\n", res.stderr)
 		assert.NoFileExists(t, out, "--check must not write the output file")
 	})
 
@@ -414,6 +415,22 @@ func TestValidateCommand(t *testing.T) {
 	assert.Contains(t, res.stderr, "accepts 1 arg(s), received 0")
 }
 
+// A file may use server-side workflows next to its own, as generate does
+// with --generate-workflows and an atlantis_workflow global naming a server
+// workflow; Atlantis accepts it, so validate must too.
+func TestValidateAcceptsServerSideWorkflows(t *testing.T) {
+	root := newFixture(t)
+	writeFile(t, filepath.Join(root, "stacks", "prod", "globals.tm.hcl"), "globals {\n  atlantis_workflow = \"production\"\n}\n")
+	out := filepath.Join(t.TempDir(), "atlantis.yaml")
+	require.Equal(t, 0, generateTo(t, root, out, "--generate-workflows").code)
+
+	res := run(t, "validate", out)
+
+	assert.Equal(t, 0, res.code, res.stderr)
+	assert.Equal(t, out+" is valid\n", res.stdout)
+	assert.Equal(t, `Warning: project "prod" uses workflow "production", which this file does not define; it must be defined in the server-side repo config`+"\n", res.stderr)
+}
+
 func TestVersionCommand(t *testing.T) {
 	res := run(t, "version")
 
@@ -430,4 +447,87 @@ func TestCommandsHaveIndependentState(t *testing.T) {
 	require.Equal(t, 0, second.code, second.stderr)
 
 	assert.True(t, strings.HasPrefix(second.stdout, "version: 3"), "flag values must not leak between runs")
+}
+
+// Comma-separated list flags accept spaces after the commas, like the config
+// file and --tag-workflow/--tag-requirements do.
+func TestListFlagsAreTrimmed(t *testing.T) {
+	root := newFixture(t)
+
+	res := run(t, "generate", "--root", root, "--no-header", "--generate-workflows",
+		"--workflow-disable-safeguards", "git, outdated-code",
+		"--when-modified", "*.tf, *.hcl,",
+		"--apply-requirements", "approved, ,mergeable")
+
+	require.Equal(t, 0, res.code, res.stderr)
+	cfg := parsed(t, res.stdout)
+	project := cfg.Projects[0]
+	assert.Equal(t, []string{"*.tf", "*.hcl"}, project.Autoplan.WhenModified)
+	require.NotNil(t, project.ApplyRequirements)
+	assert.Equal(t, []string{"approved", "mergeable"}, *project.ApplyRequirements)
+	assert.Contains(t, planRun(t, cfg, "terramate", 0), "--disable-safeguards=git,outdated-code -- ")
+
+	// An explicitly empty list is still honored.
+	res = run(t, "generate", "--root", root, "--no-header", "--when-modified=")
+	require.Equal(t, 0, res.code, res.stderr)
+	assert.Equal(t, []string{}, parsed(t, res.stdout).Projects[0].Autoplan.WhenModified)
+}
+
+// `when_modified: []` in the config file is an explicit empty list, the same
+// as --when-modified=, not "unset".
+func TestConfigEmptyWhenModifiedIsHonored(t *testing.T) {
+	root := newFixture(t)
+	writeFile(t, filepath.Join(root, ".terramate-atlantis.yaml"), "when_modified: []\nno_header: true\n")
+
+	res := run(t, "generate", "--root", root)
+
+	require.Equal(t, 0, res.code, res.stderr)
+	assert.Equal(t, []string{}, parsed(t, res.stdout).Projects[0].Autoplan.WhenModified)
+
+	// An unset key keeps the default patterns.
+	writeFile(t, filepath.Join(root, ".terramate-atlantis.yaml"), "when_modified:\nno_header: true\n")
+	res = run(t, "generate", "--root", root)
+	require.Equal(t, 0, res.code, res.stderr)
+	assert.Equal(t, []string{"*.tf", "*.tf.json", ".terraform.lock.hcl"}, parsed(t, res.stdout).Projects[0].Autoplan.WhenModified)
+}
+
+// A misspelled atlantis_* global must not be silently ignored. Globals are
+// inherited, so a typo in a parent directory is reported once.
+func TestUnknownAtlantisGlobalWarns(t *testing.T) {
+	root := newFixture(t)
+	writeFile(t, filepath.Join(root, "stacks", "globals.tm.hcl"), "globals {\n  atlantis_workflows = \"x\"\n}\n")
+
+	res := run(t, "generate", "--root", root, "--no-header")
+
+	require.Equal(t, 0, res.code, res.stderr)
+	assert.Equal(t, 1, strings.Count(res.stderr, "Warning:"), res.stderr)
+	assert.Contains(t, res.stderr, `unknown global "atlantis_workflows" (stacks: stacks/dev, stacks/prod) is ignored`)
+	assert.Contains(t, res.stderr, "known atlantis globals: atlantis_apply_requirements,")
+	assert.NotContains(t, res.stdout, "Warning", "warnings never mix with the generated config")
+}
+
+// `go install module@vX.Y.Z` builds have no -ldflags; the version must come
+// from the embedded build information instead of printing "dev".
+func TestVersionInfoFallsBackToBuildInfo(t *testing.T) {
+	info := &debug.BuildInfo{
+		Main: debug.Module{Version: "v1.2.0"},
+		Settings: []debug.BuildSetting{
+			{Key: "vcs.revision", Value: "abc123"},
+			{Key: "vcs.time", Value: "2026-11-08T00:00:00Z"},
+		},
+	}
+	version, commit, date := versionInfo(info)
+	assert.Equal(t, []string{"v1.2.0", "abc123", "2026-11-08T00:00:00Z"}, []string{version, commit, date})
+
+	// A local build without a module version keeps "dev".
+	version, _, _ = versionInfo(&debug.BuildInfo{Main: debug.Module{Version: "(devel)"}})
+	assert.Equal(t, "dev", version)
+	version, commit, date = versionInfo(nil)
+	assert.Equal(t, []string{"dev", "unknown", "unknown"}, []string{version, commit, date})
+
+	// Values set with -ldflags win.
+	defer func(v, c, d string) { Version, Commit, BuildDate = v, c, d }(Version, Commit, BuildDate)
+	Version, Commit, BuildDate = "1.3.0", "def456", "today"
+	version, commit, date = versionInfo(info)
+	assert.Equal(t, []string{"1.3.0", "def456", "today"}, []string{version, commit, date})
 }

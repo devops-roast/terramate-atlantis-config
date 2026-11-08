@@ -2,6 +2,7 @@ package atlantis
 
 import (
 	"reflect"
+	"runtime"
 	"sort"
 	"testing"
 
@@ -157,7 +158,7 @@ func TestProjectNamesAreUniqueAcrossStrategies(t *testing.T) {
 	}
 }
 
-func TestProjectNamesStableWithNamingStacks(t *testing.T) {
+func TestProjectNamesStableWithAllStacks(t *testing.T) {
 	t.Parallel()
 
 	all := []discovery.StackInfo{
@@ -172,7 +173,7 @@ func TestProjectNamesStableWithNamingStacks(t *testing.T) {
 		t.Run(strategy, func(t *testing.T) {
 			t.Parallel()
 
-			opts := Options{CreateProjectName: true, ProjectNameStrategy: strategy, ProjectNameDepth: 1, NamingStacks: all}
+			opts := Options{CreateProjectName: true, ProjectNameStrategy: strategy, ProjectNameDepth: 1, AllStacks: all}
 			full := namesByDirOf(mustGenerate(t, all, opts))
 
 			for i := range all[:4] {
@@ -188,13 +189,13 @@ func TestProjectNamesStableWithNamingStacks(t *testing.T) {
 		})
 	}
 
-	// Without NamingStacks the lone stack is named from its full path,
-	// which is exactly the instability NamingStacks fixes.
+	// Without AllStacks the lone stack is named from its full path,
+	// which is exactly the instability AllStacks fixes.
 	alone := mustGenerate(t, all[2:3], Options{CreateProjectName: true})
 	if alone.Projects[0].Name != "stacks-aws-acme-development-eu-west-1-acm" {
 		t.Fatalf("unexpected lone stack name: %q", alone.Projects[0].Name)
 	}
-	withCtx := mustGenerate(t, all[2:3], Options{CreateProjectName: true, NamingStacks: all})
+	withCtx := mustGenerate(t, all[2:3], Options{CreateProjectName: true, AllStacks: all})
 	if withCtx.Projects[0].Name != "acme-development-eu-west-1-acm" {
 		t.Fatalf("unexpected name with naming context: %q", withCtx.Projects[0].Name)
 	}
@@ -209,7 +210,7 @@ func TestSkippedStacksDoNotAffectNames(t *testing.T) {
 		{Dir: "stacks/aws/dev/vpc"},
 	}
 
-	cfg := mustGenerate(t, stacks, Options{CreateProjectName: true, NamingStacks: stacks})
+	cfg := mustGenerate(t, stacks, Options{CreateProjectName: true, AllStacks: stacks})
 	got := projectNames(cfg)
 	want := []string{"dev-vpc", "prod-vpc"}
 	if !reflect.DeepEqual(got, want) {
@@ -309,4 +310,100 @@ func sortedNames(cfg Config) []string {
 	names := projectNames(cfg)
 	sort.Strings(names)
 	return names
+}
+
+// On Linux and macOS a backslash is part of a directory name, so a stack in
+// `a\b` must keep that dir instead of pointing Atlantis at a nonexistent
+// `a/b`.
+func TestBackslashInDirIsNotASeparator(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS == "windows" {
+		t.Skip("backslash is the path separator on Windows")
+	}
+
+	cfg, err := Generate([]discovery.StackInfo{{Dir: `a\b`}, {Dir: "c"}}, Options{CreateProjectName: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dirs := []string{cfg.Projects[0].Dir, cfg.Projects[1].Dir}
+	if want := []string{`a\b`, "c"}; !reflect.DeepEqual(dirs, want) {
+		t.Fatalf("dirs: got %q, want %q", dirs, want)
+	}
+	for _, p := range cfg.Projects {
+		if !ValidProjectName(p.Name) {
+			t.Fatalf("invalid name %q for %q", p.Name, p.Dir)
+		}
+	}
+}
+
+// Disambiguation adds parent segments to the strategy's own name. It must
+// never drop the stack name (stack-name) or shorten a name below what the
+// strategy produces (full, last-n).
+func TestDisambiguationKeepsStrategyName(t *testing.T) {
+	t.Parallel()
+
+	names := func(stacks []discovery.StackInfo, strategy string, depth int) map[string]string {
+		t.Helper()
+		cfg, err := Generate(stacks, Options{CreateProjectName: true, ProjectNameStrategy: strategy, ProjectNameDepth: depth})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return namesByDirOf(cfg)
+	}
+
+	got := names([]discovery.StackInfo{
+		{Dir: "stacks/prod/eu/main", Name: "vpc"},
+		{Dir: "stacks/prod/eu/backup", Name: "vpc"},
+		{Dir: "stacks/x"},
+	}, NameStrategyStackName, 0)
+	want := map[string]string{
+		"stacks/prod/eu/main":   "stacks-prod-eu-main",
+		"stacks/prod/eu/backup": "stacks-prod-eu-backup",
+		"stacks/x":              "stacks-x",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("stack-name: got %v, want %v", got, want)
+	}
+
+	got = names([]discovery.StackInfo{
+		{Dir: "org/a/stacks/prod/eu/vpc", Name: "net"},
+		{Dir: "org/b/stacks/prod/eu/vpc", Name: "net"},
+	}, NameStrategyStackName, 0)
+	want = map[string]string{
+		"org/a/stacks/prod/eu/vpc": "a-stacks-prod-eu-net",
+		"org/b/stacks/prod/eu/vpc": "b-stacks-prod-eu-net",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("stack-name with more context: got %v, want %v", got, want)
+	}
+
+	got = names([]discovery.StackInfo{{Dir: "stacks/a/b"}, {Dir: "stacks/a-b"}, {Dir: "stacks/c"}}, NameStrategyFull, 0)
+	want = map[string]string{"stacks/a-b": "stacks-a-b", "stacks/a/b": "stacks-a-b-2", "stacks/c": "stacks-c"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("full: got %v, want %v", got, want)
+	}
+
+	// "q/b/c" and "b-c" both give "b-c" for depth 2.
+	got = names([]discovery.StackInfo{{Dir: "q/b/c"}, {Dir: "b-c"}}, NameStrategyLastN, 2)
+	want = map[string]string{"q/b/c": "q-b-c", "b-c": "b-c"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("last-n: got %v, want %v", got, want)
+	}
+}
+
+// The prefix is a path like --filter-path: "./stacks", "/stacks/" and
+// "stacks" strip the same segments.
+func TestProjectNamePrefixIsNormalized(t *testing.T) {
+	t.Parallel()
+
+	stacks := []discovery.StackInfo{{Dir: "stacks/a"}, {Dir: "stacks/b/c"}}
+	want := map[string]string{"stacks/a": "a", "stacks/b/c": "b-c"}
+	for _, prefix := range []string{"stacks", "./stacks", "/stacks/", "stacks//", "./stacks/./"} {
+		for _, strategy := range []string{NameStrategyAutoStrip, NameStrategyStackName} {
+			cfg := mustGenerate(t, stacks, Options{CreateProjectName: true, ProjectNameStrategy: strategy, ProjectNamePrefix: prefix})
+			if got := namesByDirOf(cfg); !reflect.DeepEqual(got, want) {
+				t.Errorf("%s, prefix %q: got %v, want %v", strategy, prefix, got, want)
+			}
+		}
+	}
 }

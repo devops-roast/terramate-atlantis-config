@@ -2,6 +2,7 @@ package globals
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/zclconf/go-cty/cty"
@@ -16,6 +17,20 @@ type AtlantisOverrides struct {
 	ExtraDeps         []string
 	WhenModified      []string
 	ApplyRequirements []string
+	// UnknownKeys lists atlantis_* globals that are not one of KnownGlobals
+	// (usually a typo such as atlantis_workflows), sorted.
+	UnknownKeys []string
+}
+
+// KnownGlobals are the atlantis_* globals read by ExtractAtlantisGlobals.
+var KnownGlobals = []string{
+	"atlantis_apply_requirements",
+	"atlantis_autoplan",
+	"atlantis_extra_deps",
+	"atlantis_skip",
+	"atlantis_terraform_version",
+	"atlantis_when_modified",
+	"atlantis_workflow",
 }
 
 // ExtractAtlantisGlobals extracts atlantis_* keys from a globals map.
@@ -23,9 +38,12 @@ func ExtractAtlantisGlobals(globals map[string]cty.Value) (AtlantisOverrides, er
 	var overrides AtlantisOverrides
 
 	for key, val := range globals {
+		if !strings.HasPrefix(key, "atlantis_") {
+			continue
+		}
 		// A null value (e.g. from `cond ? [...] : null`) means "not set";
 		// cty panics on most accessors for null values.
-		if !strings.HasPrefix(key, "atlantis_") || val.IsNull() {
+		if val.IsNull() {
 			continue
 		}
 
@@ -69,9 +87,12 @@ func ExtractAtlantisGlobals(globals map[string]cty.Value) (AtlantisOverrides, er
 				return AtlantisOverrides{}, err
 			}
 			overrides.ApplyRequirements = applyRequirements
+		default:
+			overrides.UnknownKeys = append(overrides.UnknownKeys, key)
 		}
 	}
 
+	sort.Strings(overrides.UnknownKeys)
 	return overrides, nil
 }
 

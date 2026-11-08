@@ -1,12 +1,15 @@
 package atlantis
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"reflect"
 	"sort"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 
 	"github.com/devops-roast/terramate-atlantis-config/internal/discovery"
 )
@@ -464,7 +467,8 @@ func TestMarshalJSON(t *testing.T) {
       }
     }
   ]
-}`
+}
+`
 
 	if string(got) != want {
 		t.Fatalf("unexpected json:\n%s\nwant:\n%s", string(got), want)
@@ -1111,7 +1115,49 @@ func TestGenerateWarnsOnDependencyCycle(t *testing.T) {
 	}
 
 	// No cycle, no warning; a nil Warnf is safe.
-	warnings = nil
+	testNoCycleNoWarning(t, stacks)
+}
+
+// A stack that depends on a cycle is not itself on the cycle: it must still
+// run after all of its dependencies, including the cycle and any ordinary
+// chain, and must not be reported as cyclic.
+func TestExecutionOrderGroupsAboveCycle(t *testing.T) {
+	t.Parallel()
+
+	stacks := []discovery.StackInfo{
+		{Dir: "a", AfterDirs: []string{"b", "base"}},
+		{Dir: "b", AfterDirs: []string{"a"}},
+		{Dir: "base"},
+		{Dir: "d", AfterDirs: []string{"a", "n2"}},
+		{Dir: "n1"},
+		{Dir: "n2", AfterDirs: []string{"n1"}},
+	}
+
+	var warnings []string
+	cfg := mustGenerate(t, stacks, Options{
+		CreateProjectName:    true,
+		ExecutionOrderGroups: true,
+		Warnf: func(format string, args ...any) {
+			warnings = append(warnings, fmt.Sprintf(format, args...))
+		},
+	})
+
+	groups := map[string]int{}
+	for _, p := range cfg.Projects {
+		groups[p.Dir] = p.ExecutionOrderGroup
+	}
+	want := map[string]int{"base": 0, "a": 1, "b": 1, "n1": 0, "n2": 1, "d": 2}
+	if !reflect.DeepEqual(groups, want) {
+		t.Fatalf("groups: got %v, want %v", groups, want)
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "stacks a, b;") {
+		t.Fatalf("expected one warning naming only a and b, got %v", warnings)
+	}
+}
+
+func testNoCycleNoWarning(t *testing.T, stacks []discovery.StackInfo) {
+	t.Helper()
+	var warnings []string
 	mustGenerate(t, stacks[2:], Options{ExecutionOrderGroups: true, Warnf: func(string, ...any) { warnings = append(warnings, "x") }})
 	mustGenerate(t, stacks, Options{ExecutionOrderGroups: true})
 	if len(warnings) != 0 {
@@ -1140,5 +1186,116 @@ func TestGenerateEmptyWhenModifiedOverride(t *testing.T) {
 	}
 	if !strings.Contains(string(out), `"when_modified": []`) {
 		t.Fatalf("JSON must render an empty list, not null:\n%s", out)
+	}
+}
+
+func TestMarshalOutputEndsWithSingleNewline(t *testing.T) {
+	t.Parallel()
+
+	cfg := mustGenerate(t, []discovery.StackInfo{{Dir: "a"}}, Options{CreateProjectName: true})
+	jsonOut, err := MarshalJSON(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	yamlOut, err := MarshalYAML(cfg, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, out := range map[string][]byte{"json": jsonOut, "yaml": yamlOut} {
+		if !bytes.HasSuffix(out, []byte("\n")) || bytes.HasSuffix(out, []byte("\n\n")) {
+			t.Errorf("%s output must end with exactly one newline: %q", name, out[max(0, len(out)-10):])
+		}
+	}
+}
+
+// Ordering is followed through stacks that are not generated, as
+// `terramate run` does: a runs after m and m after z, so with m filtered
+// out (only in AllStacks) or skipped, a still runs after z.
+func TestDependenciesFollowedThroughExcludedStacks(t *testing.T) {
+	t.Parallel()
+
+	all := []discovery.StackInfo{
+		{Dir: "a", AfterDirs: []string{"m"}},
+		{Dir: "m", AfterDirs: []string{"z"}},
+		{Dir: "n", BeforeDirs: []string{"a"}},
+		{Dir: "y", BeforeDirs: []string{"n"}},
+		{Dir: "z"},
+	}
+	check := func(name string, cfg Config) {
+		t.Helper()
+		byDir := map[string]Project{}
+		for _, p := range cfg.Projects {
+			byDir[p.Dir] = p
+		}
+		if got := byDir["a"].DependsOn; !reflect.DeepEqual(got, []string{"y", "z"}) {
+			t.Fatalf("%s: depends_on of a: got %v, want [y z]", name, got)
+		}
+		if byDir["a"].ExecutionOrderGroup != 1 || byDir["z"].ExecutionOrderGroup != 0 {
+			t.Fatalf("%s: groups: a=%d z=%d", name, byDir["a"].ExecutionOrderGroup, byDir["z"].ExecutionOrderGroup)
+		}
+	}
+	opts := Options{CreateProjectName: true, DependsOn: true, ExecutionOrderGroups: true}
+
+	// m and n filtered out: only known through AllStacks.
+	filtered := opts
+	filtered.AllStacks = all
+	check("filtered", mustGenerate(t, []discovery.StackInfo{all[0], all[3], all[4]}, filtered))
+
+	// m and n skipped.
+	skipped := append([]discovery.StackInfo(nil), all...)
+	skipped[1].Skip, skipped[2].Skip = true, true
+	check("skipped", mustGenerate(t, skipped, opts))
+}
+
+// A literal block line ending in whitespace would be stripped by trailing
+// whitespace fixers, changing the command and failing --check.
+func TestMarshalYAMLHasNoTrailingWhitespace(t *testing.T) {
+	t.Parallel()
+
+	cfg := mustGenerate(t, []discovery.StackInfo{{Dir: "a"}}, Options{CreateProjectName: true})
+	cfg.Workflows = map[string]interface{}{"wf": map[string]interface{}{"plan": map[string]interface{}{"steps": []interface{}{
+		map[string]interface{}{"run": "echo a\t\necho b"},
+		map[string]interface{}{"run": "echo c \necho d\n"},
+		map[string]interface{}{"run": "echo e\necho f\n"},
+	}}}}
+
+	out, err := MarshalYAML(cfg, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, line := range strings.Split(string(out), "\n") {
+		if strings.TrimRight(line, " \t") != line {
+			t.Errorf("line %d has trailing whitespace: %q", i+1, line)
+		}
+	}
+
+	var back Config
+	if err := yaml.Unmarshal(out, &back); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(back.Workflows, cfg.Workflows) {
+		t.Fatalf("round trip changed workflows:\n%#v\n%#v", back.Workflows, cfg.Workflows)
+	}
+	if !strings.Contains(string(out), "- run: |\n") {
+		t.Errorf("multi-line strings without trailing whitespace keep the literal style:\n%s", out)
+	}
+}
+
+// With depends_on, a cycle makes the projects impossible to apply in
+// Atlantis; the warning must say so rather than only mention ordering.
+func TestDependencyCycleWarningMentionsDependsOn(t *testing.T) {
+	t.Parallel()
+
+	var warnings []string
+	mustGenerate(t, []discovery.StackInfo{
+		{Dir: "a", AfterDirs: []string{"b"}},
+		{Dir: "b", AfterDirs: []string{"a"}},
+	}, Options{
+		CreateProjectName: true,
+		DependsOn:         true,
+		Warnf:             func(format string, args ...any) { warnings = append(warnings, fmt.Sprintf(format, args...)) },
+	})
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "stacks a, b;") || !strings.Contains(warnings[0], "can't be applied") {
+		t.Fatalf("unexpected warnings: %q", warnings)
 	}
 }

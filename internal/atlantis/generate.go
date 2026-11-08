@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -40,12 +41,14 @@ type Options struct {
 	ProjectNamePrefix    string // explicit prefix to strip (used with any strategy)
 	ProjectNameDepth     int    // number of trailing path segments to use (for last-n)
 
-	// NamingStacks is the set of stacks project names are computed against,
-	// usually every stack in the repository. Naming against the full set keeps
-	// a stack's name the same no matter which filters (--changed, --filter,
-	// --filter-path, --exclude-*) selected it. Defaults to the stacks passed
-	// to Generate.
-	NamingStacks []discovery.StackInfo
+	// AllStacks is every stack in the repository, whatever the filters
+	// (--changed, --filter, --filter-path, --exclude-*) selected:
+	//   - project names are computed against it (minus skipped stacks), so a
+	//     stack keeps its name no matter which stacks a run selected;
+	//   - ordering is followed through its stacks, so when a runs after m and
+	//     m after z, a still runs after z if m is filtered out or skipped.
+	// Defaults to the stacks passed to Generate.
+	AllStacks []discovery.StackInfo
 
 	// Warnf receives non-fatal warnings, such as dependency cycles.
 	// A nil Warnf discards them.
@@ -75,7 +78,7 @@ func Generate(stacks []discovery.StackInfo, opts Options) (Config, error) {
 	projects := make([]Project, 0, len(includedStacks))
 	projectByDir := make(map[string]*Project, len(includedStacks))
 
-	namer := newProjectNamer(namingContext(stacks, opts.NamingStacks), opts)
+	namer := newProjectNamer(namingContext(stacks, opts.AllStacks), opts)
 
 	for _, stack := range includedStacks {
 		dir := stackDir(stack.Dir)
@@ -142,13 +145,15 @@ func Generate(stacks []discovery.StackInfo, opts Options) (Config, error) {
 	}
 
 	if opts.ExecutionOrderGroups || opts.DependsOn {
-		dependencies := buildDependencies(includedStacks, projectByDir)
+		dependencies := buildDependencies(stacks, opts.AllStacks, projectByDir)
 		groups, cyclic := computeExecutionOrderGroups(dependencies)
 		if len(cyclic) > 0 {
-			opts.warnf(
-				"dependency cycle detected involving stacks %s; their ordering can't be honored and they are placed in execution_order_group 0",
-				strings.Join(cyclic, ", "),
-			)
+			consequence := "their order among themselves can't be honored, so they share an execution_order_group"
+			if opts.DependsOn {
+				consequence = "their depends_on entries reference each other, and Atlantis won't apply a project " +
+					"before its dependencies, so they can't be applied until the cycle is broken"
+			}
+			opts.warnf("dependency cycle detected between stacks %s; %s", strings.Join(cyclic, ", "), consequence)
 		}
 
 		if opts.ExecutionOrderGroups {
@@ -209,9 +214,11 @@ func Generate(stacks []discovery.StackInfo, opts Options) (Config, error) {
 }
 
 // stackDir normalizes a StackInfo.Dir into an Atlantis project dir.
-// The root stack is "." because Atlantis requires a non-empty dir.
+// The root stack is "." because Atlantis requires a non-empty dir. Only the
+// OS separator is converted: on Linux and macOS a backslash is a valid
+// character in a directory name, not a separator.
 func stackDir(dir string) string {
-	dir = strings.Trim(strings.ReplaceAll(dir, "\\", "/"), "/")
+	dir = strings.Trim(filepath.ToSlash(dir), "/")
 	if dir == "" {
 		return discovery.RootDir
 	}
@@ -220,10 +227,16 @@ func stackDir(dir string) string {
 
 // MarshalYAML marshals an Atlantis Config into YAML.
 func MarshalYAML(cfg Config, addHeader bool) ([]byte, error) {
+	var node yaml.Node
+	if err := node.Encode(cfg); err != nil {
+		return nil, err
+	}
+	quoteTrailingWhitespace(&node)
+
 	var buf bytes.Buffer
 	enc := yaml.NewEncoder(&buf)
 	enc.SetIndent(2)
-	if err := enc.Encode(cfg); err != nil {
+	if err := enc.Encode(&node); err != nil {
 		return nil, err
 	}
 	marshaled := buf.Bytes()
@@ -236,8 +249,35 @@ func MarshalYAML(cfg Config, addHeader bool) ([]byte, error) {
 	return append([]byte(header), marshaled...), nil
 }
 
+// quoteTrailingWhitespace double-quotes multi-line strings that have
+// whitespace at the end of a line. yaml.v3 writes them as literal blocks,
+// which puts that whitespace at the end of an output line, where trailing
+// whitespace fixers (e.g. the pre-commit trailing-whitespace hook) strip it,
+// changing the value and making --check fail.
+func quoteTrailingWhitespace(node *yaml.Node) {
+	if node.Kind == yaml.ScalarNode && node.Tag == "!!str" && strings.Contains(node.Value, "\n") {
+		for _, line := range strings.Split(node.Value, "\n") {
+			if strings.TrimRight(line, " \t") != line {
+				node.Style = yaml.DoubleQuotedStyle
+				break
+			}
+		}
+	}
+	for _, child := range node.Content {
+		quoteTrailingWhitespace(child)
+	}
+}
+
+// MarshalJSON marshals an Atlantis Config into indented JSON. Like the YAML
+// output it ends with a newline, so end-of-file fixers (e.g. the pre-commit
+// end-of-file-fixer hook) leave a generated file unchanged and --check keeps
+// passing.
 func MarshalJSON(cfg Config) ([]byte, error) {
-	return json.MarshalIndent(cfg, "", "  ")
+	out, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return append(out, '\n'), nil
 }
 
 // copyToPtr returns a pointer to a non-nil copy of s.
@@ -275,91 +315,153 @@ func requirementsFromTags(tags []string, mapping map[string][]string) ([]string,
 
 // buildDependencies returns, for every project dir, the set of project dirs
 // it must run after. It uses the stack.after/stack.before entries already
-// resolved by discovery (AfterDirs/BeforeDirs); dependencies on stacks that
-// are not part of the generated config (filtered out or skipped) are dropped.
-func buildDependencies(stacks []discovery.StackInfo, projectByDir map[string]*Project) map[string]map[string]struct{} {
-	dependencies := make(map[string]map[string]struct{}, len(projectByDir))
-	for dir := range projectByDir {
-		dependencies[dir] = make(map[string]struct{})
+// resolved by discovery (AfterDirs/BeforeDirs) of every known stack. Stacks
+// that are not part of the generated config (filtered out or skipped) are
+// not listed, but ordering is followed through them, as `terramate run`
+// does: if a runs after m and m after z, a depends on z when m is excluded.
+func buildDependencies(stacks, all []discovery.StackInfo, projectByDir map[string]*Project) map[string]map[string]struct{} {
+	// after[dir] is the set of stacks dir runs directly after.
+	after := map[string]map[string]struct{}{}
+	addEdge := func(dir, dep string) {
+		if dir == dep {
+			return
+		}
+		if after[dir] == nil {
+			after[dir] = map[string]struct{}{}
+		}
+		after[dir][dep] = struct{}{}
+	}
+	for _, list := range [][]discovery.StackInfo{all, stacks} {
+		for _, stack := range list {
+			dir := stackDir(stack.Dir)
+			for _, dep := range stack.AfterDirs {
+				addEdge(dir, stackDir(dep))
+			}
+			for _, later := range stack.BeforeDirs {
+				addEdge(stackDir(later), dir)
+			}
+		}
 	}
 
-	for _, stack := range stacks {
-		dir := stackDir(stack.Dir)
-		if _, ok := projectByDir[dir]; !ok {
-			continue
-		}
-
-		for _, after := range stack.AfterDirs {
-			after = stackDir(after)
-			if _, ok := projectByDir[after]; ok && after != dir {
-				dependencies[dir][after] = struct{}{}
+	dependencies := make(map[string]map[string]struct{}, len(projectByDir))
+	for dir := range projectByDir {
+		deps := map[string]struct{}{}
+		visited := map[string]struct{}{dir: {}}
+		queue := sortedKeys(after[dir])
+		for len(queue) > 0 {
+			next := queue[0]
+			queue = queue[1:]
+			if _, seen := visited[next]; seen {
+				continue
 			}
-		}
-
-		for _, before := range stack.BeforeDirs {
-			before = stackDir(before)
-			if _, ok := projectByDir[before]; ok && before != dir {
-				dependencies[before][dir] = struct{}{}
+			visited[next] = struct{}{}
+			if _, generated := projectByDir[next]; generated {
+				deps[next] = struct{}{}
+				continue
 			}
+			queue = append(queue, sortedKeys(after[next])...)
 		}
+		dependencies[dir] = deps
 	}
 
 	return dependencies
 }
 
 // computeExecutionOrderGroups assigns each dir the length of its longest
-// dependency chain. Dirs that can't be ordered because they are part of, or
-// depend on, a dependency cycle are placed in group 0 and returned (sorted)
-// as the second value.
-func computeExecutionOrderGroups(dependencies map[string]map[string]struct{}) (groups map[string]int, unresolved []string) {
+// dependency chain, so every dependency lands in a lower group. Dirs on a
+// dependency cycle can't be ordered among themselves: each cycle (strongly
+// connected component) is collapsed into one node, so its dirs share a group
+// that is still above everything the cycle depends on, and dirs that depend
+// on a cycle are still placed above it. The dirs on a cycle are returned
+// (sorted) as the second value.
+func computeExecutionOrderGroups(dependencies map[string]map[string]struct{}) (groups map[string]int, cyclic []string) {
 	groups = make(map[string]int, len(dependencies))
-	resolved := make(map[string]struct{}, len(dependencies))
-	dirs := sortedDependencyDirs(dependencies)
 
-	for {
-		progressed := false
+	// Components come out of Tarjan's algorithm in reverse topological
+	// order: a component is emitted after every component it depends on, so
+	// their groups are already known.
+	for _, component := range stronglyConnectedComponents(dependencies) {
+		members := make(map[string]struct{}, len(component))
+		for _, dir := range component {
+			members[dir] = struct{}{}
+		}
 
-		for _, dir := range dirs {
-			if _, done := resolved[dir]; done {
-				continue
-			}
-
-			allResolved := true
-			group := 0
+		group := 0
+		for _, dir := range component {
 			for dep := range dependencies[dir] {
-				depGroup, ok := groups[dep]
-				if !ok {
-					allResolved = false
-					break
+				if _, same := members[dep]; same {
+					continue
 				}
-				if depGroup+1 > group {
-					group = depGroup + 1
-				}
+				group = max(group, groups[dep]+1)
 			}
+		}
 
-			if !allResolved {
-				continue
-			}
-
+		for _, dir := range component {
 			groups[dir] = group
-			resolved[dir] = struct{}{}
-			progressed = true
 		}
-
-		if !progressed {
-			break
+		if len(component) > 1 {
+			cyclic = append(cyclic, component...)
 		}
 	}
 
-	for _, dir := range dirs {
-		if _, done := resolved[dir]; done {
-			continue
+	sort.Strings(cyclic)
+	return groups, cyclic
+}
+
+// stronglyConnectedComponents returns the strongly connected components of
+// the dependency graph (Tarjan's algorithm), each one before any component
+// that depends on it. Dirs and edges are visited in sorted order so the
+// result is deterministic.
+func stronglyConnectedComponents(dependencies map[string]map[string]struct{}) [][]string {
+	var (
+		index      = map[string]int{}
+		lowlink    = map[string]int{}
+		onStack    = map[string]bool{}
+		stack      []string
+		components [][]string
+		next       int
+	)
+
+	var visit func(dir string)
+	visit = func(dir string) {
+		index[dir] = next
+		lowlink[dir] = next
+		next++
+		stack = append(stack, dir)
+		onStack[dir] = true
+
+		for _, dep := range sortedKeys(dependencies[dir]) {
+			if _, seen := index[dep]; !seen {
+				visit(dep)
+				lowlink[dir] = min(lowlink[dir], lowlink[dep])
+			} else if onStack[dep] {
+				lowlink[dir] = min(lowlink[dir], index[dep])
+			}
 		}
-		groups[dir] = 0
-		unresolved = append(unresolved, dir)
+
+		if lowlink[dir] != index[dir] {
+			return
+		}
+		var component []string
+		for {
+			top := stack[len(stack)-1]
+			stack = stack[:len(stack)-1]
+			onStack[top] = false
+			component = append(component, top)
+			if top == dir {
+				break
+			}
+		}
+		sort.Strings(component)
+		components = append(components, component)
 	}
 
-	return groups, unresolved
+	for _, dir := range sortedDependencyDirs(dependencies) {
+		if _, seen := index[dir]; !seen {
+			visit(dir)
+		}
+	}
+	return components
 }
 
 func sortedDependencyDirs(m map[string]map[string]struct{}) []string {
