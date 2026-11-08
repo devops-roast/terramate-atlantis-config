@@ -28,6 +28,24 @@ func TestValidateConfig(t *testing.T) {
 			want: []string{},
 		},
 		{
+			name: "dirs that differ only in spelling are the same dir",
+			cfg: atlantis.Config{
+				Version: 3,
+				Projects: []atlantis.Project{
+					{Dir: "stacks/a"},
+					{Dir: "./stacks/a"},
+					{Dir: "stacks/a/"},
+					{Dir: "."},
+					{Dir: "./"},
+				},
+			},
+			want: []string{
+				"duplicate project dir: ./stacks/a (workspace default); projects sharing a dir and workspace must all have a name",
+				"duplicate project dir: stacks/a/ (workspace default); projects sharing a dir and workspace must all have a name",
+				"duplicate project dir: ./ (workspace default); projects sharing a dir and workspace must all have a name",
+			},
+		},
+		{
 			name: "same dir with different workspaces is allowed",
 			cfg: atlantis.Config{
 				Version: 3,

@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"path"
 
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
@@ -62,7 +63,9 @@ func validateConfig(cfg atlantis.Config) []string {
 			if workspace == "" {
 				workspace = "default"
 			}
-			key := project.Dir + "\x00" + workspace
+			// Atlantis cleans the dir ("./a", "a/" and "/a" are all "a")
+			// before matching projects, so compare cleaned dirs.
+			key := path.Clean("./"+project.Dir) + "\x00" + workspace
 			named := project.Name != ""
 			if allNamed, exists := allNamedByDirWorkspace[key]; exists {
 				if !allNamed || !named {
