@@ -1111,7 +1111,49 @@ func TestGenerateWarnsOnDependencyCycle(t *testing.T) {
 	}
 
 	// No cycle, no warning; a nil Warnf is safe.
-	warnings = nil
+	testNoCycleNoWarning(t, stacks)
+}
+
+// A stack that depends on a cycle is not itself on the cycle: it must still
+// run after all of its dependencies, including the cycle and any ordinary
+// chain, and must not be reported as cyclic.
+func TestExecutionOrderGroupsAboveCycle(t *testing.T) {
+	t.Parallel()
+
+	stacks := []discovery.StackInfo{
+		{Dir: "a", AfterDirs: []string{"b", "base"}},
+		{Dir: "b", AfterDirs: []string{"a"}},
+		{Dir: "base"},
+		{Dir: "d", AfterDirs: []string{"a", "n2"}},
+		{Dir: "n1"},
+		{Dir: "n2", AfterDirs: []string{"n1"}},
+	}
+
+	var warnings []string
+	cfg := mustGenerate(t, stacks, Options{
+		CreateProjectName:    true,
+		ExecutionOrderGroups: true,
+		Warnf: func(format string, args ...any) {
+			warnings = append(warnings, fmt.Sprintf(format, args...))
+		},
+	})
+
+	groups := map[string]int{}
+	for _, p := range cfg.Projects {
+		groups[p.Dir] = p.ExecutionOrderGroup
+	}
+	want := map[string]int{"base": 0, "a": 1, "b": 1, "n1": 0, "n2": 1, "d": 2}
+	if !reflect.DeepEqual(groups, want) {
+		t.Fatalf("groups: got %v, want %v", groups, want)
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "stacks a, b;") {
+		t.Fatalf("expected one warning naming only a and b, got %v", warnings)
+	}
+}
+
+func testNoCycleNoWarning(t *testing.T, stacks []discovery.StackInfo) {
+	t.Helper()
+	var warnings []string
 	mustGenerate(t, stacks[2:], Options{ExecutionOrderGroups: true, Warnf: func(string, ...any) { warnings = append(warnings, "x") }})
 	mustGenerate(t, stacks, Options{ExecutionOrderGroups: true})
 	if len(warnings) != 0 {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -146,7 +147,7 @@ func Generate(stacks []discovery.StackInfo, opts Options) (Config, error) {
 		groups, cyclic := computeExecutionOrderGroups(dependencies)
 		if len(cyclic) > 0 {
 			opts.warnf(
-				"dependency cycle detected involving stacks %s; their ordering can't be honored and they are placed in execution_order_group 0",
+				"dependency cycle detected between stacks %s; their order among themselves can't be honored, so they share an execution_order_group",
 				strings.Join(cyclic, ", "),
 			)
 		}
@@ -209,9 +210,11 @@ func Generate(stacks []discovery.StackInfo, opts Options) (Config, error) {
 }
 
 // stackDir normalizes a StackInfo.Dir into an Atlantis project dir.
-// The root stack is "." because Atlantis requires a non-empty dir.
+// The root stack is "." because Atlantis requires a non-empty dir. Only the
+// OS separator is converted: on Linux and macOS a backslash is a valid
+// character in a directory name, not a separator.
 func stackDir(dir string) string {
-	dir = strings.Trim(strings.ReplaceAll(dir, "\\", "/"), "/")
+	dir = strings.Trim(filepath.ToSlash(dir), "/")
 	if dir == "" {
 		return discovery.RootDir
 	}
@@ -308,58 +311,100 @@ func buildDependencies(stacks []discovery.StackInfo, projectByDir map[string]*Pr
 }
 
 // computeExecutionOrderGroups assigns each dir the length of its longest
-// dependency chain. Dirs that can't be ordered because they are part of, or
-// depend on, a dependency cycle are placed in group 0 and returned (sorted)
-// as the second value.
-func computeExecutionOrderGroups(dependencies map[string]map[string]struct{}) (groups map[string]int, unresolved []string) {
+// dependency chain, so every dependency lands in a lower group. Dirs on a
+// dependency cycle can't be ordered among themselves: each cycle (strongly
+// connected component) is collapsed into one node, so its dirs share a group
+// that is still above everything the cycle depends on, and dirs that depend
+// on a cycle are still placed above it. The dirs on a cycle are returned
+// (sorted) as the second value.
+func computeExecutionOrderGroups(dependencies map[string]map[string]struct{}) (groups map[string]int, cyclic []string) {
 	groups = make(map[string]int, len(dependencies))
-	resolved := make(map[string]struct{}, len(dependencies))
-	dirs := sortedDependencyDirs(dependencies)
 
-	for {
-		progressed := false
+	// Components come out of Tarjan's algorithm in reverse topological
+	// order: a component is emitted after every component it depends on, so
+	// their groups are already known.
+	for _, component := range stronglyConnectedComponents(dependencies) {
+		members := make(map[string]struct{}, len(component))
+		for _, dir := range component {
+			members[dir] = struct{}{}
+		}
 
-		for _, dir := range dirs {
-			if _, done := resolved[dir]; done {
-				continue
-			}
-
-			allResolved := true
-			group := 0
+		group := 0
+		for _, dir := range component {
 			for dep := range dependencies[dir] {
-				depGroup, ok := groups[dep]
-				if !ok {
-					allResolved = false
-					break
+				if _, same := members[dep]; same {
+					continue
 				}
-				if depGroup+1 > group {
-					group = depGroup + 1
-				}
+				group = max(group, groups[dep]+1)
 			}
+		}
 
-			if !allResolved {
-				continue
-			}
-
+		for _, dir := range component {
 			groups[dir] = group
-			resolved[dir] = struct{}{}
-			progressed = true
 		}
-
-		if !progressed {
-			break
+		if len(component) > 1 {
+			cyclic = append(cyclic, component...)
 		}
 	}
 
-	for _, dir := range dirs {
-		if _, done := resolved[dir]; done {
-			continue
+	sort.Strings(cyclic)
+	return groups, cyclic
+}
+
+// stronglyConnectedComponents returns the strongly connected components of
+// the dependency graph (Tarjan's algorithm), each one before any component
+// that depends on it. Dirs and edges are visited in sorted order so the
+// result is deterministic.
+func stronglyConnectedComponents(dependencies map[string]map[string]struct{}) [][]string {
+	var (
+		index      = map[string]int{}
+		lowlink    = map[string]int{}
+		onStack    = map[string]bool{}
+		stack      []string
+		components [][]string
+		next       int
+	)
+
+	var visit func(dir string)
+	visit = func(dir string) {
+		index[dir] = next
+		lowlink[dir] = next
+		next++
+		stack = append(stack, dir)
+		onStack[dir] = true
+
+		for _, dep := range sortedKeys(dependencies[dir]) {
+			if _, seen := index[dep]; !seen {
+				visit(dep)
+				lowlink[dir] = min(lowlink[dir], lowlink[dep])
+			} else if onStack[dep] {
+				lowlink[dir] = min(lowlink[dir], index[dep])
+			}
 		}
-		groups[dir] = 0
-		unresolved = append(unresolved, dir)
+
+		if lowlink[dir] != index[dir] {
+			return
+		}
+		var component []string
+		for {
+			top := stack[len(stack)-1]
+			stack = stack[:len(stack)-1]
+			onStack[top] = false
+			component = append(component, top)
+			if top == dir {
+				break
+			}
+		}
+		sort.Strings(component)
+		components = append(components, component)
 	}
 
-	return groups, unresolved
+	for _, dir := range sortedDependencyDirs(dependencies) {
+		if _, seen := index[dir]; !seen {
+			visit(dir)
+		}
+	}
+	return components
 }
 
 func sortedDependencyDirs(m map[string]map[string]struct{}) []string {
