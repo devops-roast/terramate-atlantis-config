@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.2.0](https://github.com/devops-roast/terramate-atlantis-config/compare/v1.1.0...v1.2.0) (2026-11-08)
+
+
+### Features
+
+* complete config file schema and make generated workflows work in Atlantis ([#7](https://github.com/devops-roast/terramate-atlantis-config/issues/7)) ([6324ce6](https://github.com/devops-roast/terramate-atlantis-config/commit/6324ce6d1ad758f14f000226ec0f196a644db071))
+
+
+### Bug Fixes
+
+* generate valid depends_on, stable names and root stack projects ([#4](https://github.com/devops-roast/terramate-atlantis-config/issues/4)) ([5df71da](https://github.com/devops-roast/terramate-atlantis-config/commit/5df71da44c2cef35020647e04a13773c021e59d8))
+* print CLI errors once, silence SDK logs and validate merged options ([#3](https://github.com/devops-roast/terramate-atlantis-config/issues/3)) ([47b1eb3](https://github.com/devops-roast/terramate-atlantis-config/commit/47b1eb39c501cee9f81d2109df8455297f10f1dd))
+
 ## [1.1.0](https://github.com/devops-roast/terramate-atlantis-config/compare/v1.0.0...v1.1.0) (2026-03-25)
 
 
