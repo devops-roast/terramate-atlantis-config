@@ -472,3 +472,15 @@ func TestCLIChangedKeepsTransitiveOrdering(t *testing.T) {
 	require.Equal(t, []string{"z"}, byDir["stacks/a"].DependsOn)
 	require.Equal(t, 1, byDir["stacks/a"].ExecutionOrderGroup)
 }
+
+// Order entries are resolved once per stack, so Terramate's warning about
+// a path that doesn't exist is logged once, not once per use.
+func TestCLIOrderWarningsLoggedOnce(t *testing.T) {
+	dir := copyFixture(t, "testdata/dependencies")
+	initGitRepo(t, dir)
+
+	res := runCLI(t, dir, "generate", "--depends-on")
+
+	require.Equal(t, 0, res.exitCode, res.stderr)
+	require.Equal(t, 1, strings.Count(res.stderr, "does-not-exist not found"), res.stderr)
+}

@@ -99,18 +99,23 @@ func Discover(opts DiscoverOptions) (Result, error) {
 	// Keyed by StackInfo.Dir.
 	overridesByDir := make(map[string]stackOverrides, len(stacks))
 
+	orderByDir := make(map[string]stackOrder, len(stacks))
 	allStacks := make([]StackInfo, 0, len(stacks))
 	for _, sortable := range stacks {
 		stack := sortable.Stack
 		overrides, err := atlantisOverrides(root, stack)
 		overridesByDir[normalizeStackPath(stack.Dir.String())] = stackOverrides{overrides: overrides, err: err}
 
+		// Resolved once per stack: resolving logs Terramate warnings (e.g.
+		// for a path that doesn't exist), which must not repeat.
+		order := resolveOrder(root, stack)
+		orderByDir[normalizeStackPath(stack.Dir.String())] = order
+
 		// Errors only fail the run for selected stacks (below); here a stack
 		// whose globals or order entries can't be read is simply not
 		// skipped and has no ordering.
-		afterDirs, afterErr := resolveOrderEntries(root, stack, stack.After)
-		beforeDirs, beforeErr := resolveOrderEntries(root, stack, stack.Before)
-		if afterErr != nil || beforeErr != nil {
+		afterDirs, beforeDirs := order.afterDirs, order.beforeDirs
+		if order.err != nil {
 			afterDirs, beforeDirs = nil, nil
 		}
 
@@ -221,14 +226,11 @@ func Discover(opts DiscoverOptions) (Result, error) {
 		}
 		overrides := stored.overrides
 
-		afterDirs, err := resolveOrderEntries(root, stack, stack.After)
-		if err != nil {
-			return Result{}, fmt.Errorf("resolving stack.after for stack %q: %w", stack.Dir.String(), err)
+		order := orderByDir[stackDir]
+		if order.err != nil {
+			return Result{}, order.err
 		}
-		beforeDirs, err := resolveOrderEntries(root, stack, stack.Before)
-		if err != nil {
-			return Result{}, fmt.Errorf("resolving stack.before for stack %q: %w", stack.Dir.String(), err)
-		}
+		afterDirs, beforeDirs := order.afterDirs, order.beforeDirs
 
 		discovered = append(discovered, StackInfo{
 			Name:              stack.Name,
@@ -308,6 +310,25 @@ func atlantisOverrides(root *config.Root, stack *config.Stack) (globalsExtract.A
 		return globalsExtract.AtlantisOverrides{}, fmt.Errorf("extracting atlantis globals for stack %q: %w", stack.Dir.String(), err)
 	}
 	return overrides, nil
+}
+
+// stackOrder is a stack's resolved stack.after and stack.before entries.
+type stackOrder struct {
+	afterDirs  []string
+	beforeDirs []string
+	err        error
+}
+
+func resolveOrder(root *config.Root, stack *config.Stack) stackOrder {
+	afterDirs, err := resolveOrderEntries(root, stack, stack.After)
+	if err != nil {
+		return stackOrder{err: fmt.Errorf("resolving stack.after for stack %q: %w", stack.Dir.String(), err)}
+	}
+	beforeDirs, err := resolveOrderEntries(root, stack, stack.Before)
+	if err != nil {
+		return stackOrder{err: fmt.Errorf("resolving stack.before for stack %q: %w", stack.Dir.String(), err)}
+	}
+	return stackOrder{afterDirs: afterDirs, beforeDirs: beforeDirs}
 }
 
 // resolveOrderEntries resolves stack.after / stack.before entries to stack
