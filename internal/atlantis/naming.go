@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 	"path"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -112,7 +113,7 @@ func newProjectNamer(stacks []discovery.StackInfo, opts Options) *projectNamer {
 
 	n := &projectNamer{
 		strategy: strategy,
-		prefix:   strings.Trim(opts.ProjectNamePrefix, "/"),
+		prefix:   normalizePrefix(opts.ProjectNamePrefix),
 		depth:    opts.ProjectNameDepth,
 	}
 
@@ -122,6 +123,21 @@ func newProjectNamer(stacks []discovery.StackInfo, opts Options) *projectNamer {
 
 	n.namesByDir = n.buildUniqueNames(stacks)
 	return n
+}
+
+// normalizePrefix cleans --project-name-prefix the way stack dirs are
+// written, so "stacks", "/stacks", "./stacks" and "stacks/" all strip
+// "stacks". "" and "." mean no prefix.
+func normalizePrefix(prefix string) string {
+	prefix = filepath.ToSlash(prefix)
+	if prefix == "" {
+		return ""
+	}
+	prefix = strings.Trim(path.Clean(prefix), "/")
+	if prefix == "." {
+		return ""
+	}
+	return prefix
 }
 
 func (n *projectNamer) nameFor(dir string) string {

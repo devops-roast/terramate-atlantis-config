@@ -390,3 +390,20 @@ func TestDisambiguationKeepsStrategyName(t *testing.T) {
 		t.Fatalf("last-n: got %v, want %v", got, want)
 	}
 }
+
+// The prefix is a path like --filter-path: "./stacks", "/stacks/" and
+// "stacks" strip the same segments.
+func TestProjectNamePrefixIsNormalized(t *testing.T) {
+	t.Parallel()
+
+	stacks := []discovery.StackInfo{{Dir: "stacks/a"}, {Dir: "stacks/b/c"}}
+	want := map[string]string{"stacks/a": "a", "stacks/b/c": "b-c"}
+	for _, prefix := range []string{"stacks", "./stacks", "/stacks/", "stacks//", "./stacks/./"} {
+		for _, strategy := range []string{NameStrategyAutoStrip, NameStrategyStackName} {
+			cfg := mustGenerate(t, stacks, Options{CreateProjectName: true, ProjectNameStrategy: strategy, ProjectNamePrefix: prefix})
+			if got := namesByDirOf(cfg); !reflect.DeepEqual(got, want) {
+				t.Errorf("%s, prefix %q: got %v, want %v", strategy, prefix, got, want)
+			}
+		}
+	}
+}
