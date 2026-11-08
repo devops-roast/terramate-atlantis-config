@@ -148,10 +148,12 @@ func Generate(stacks []discovery.StackInfo, opts Options) (Config, error) {
 		dependencies := buildDependencies(stacks, opts.AllStacks, projectByDir)
 		groups, cyclic := computeExecutionOrderGroups(dependencies)
 		if len(cyclic) > 0 {
-			opts.warnf(
-				"dependency cycle detected between stacks %s; their order among themselves can't be honored, so they share an execution_order_group",
-				strings.Join(cyclic, ", "),
-			)
+			consequence := "their order among themselves can't be honored, so they share an execution_order_group"
+			if opts.DependsOn {
+				consequence = "their depends_on entries reference each other, and Atlantis won't apply a project " +
+					"before its dependencies, so they can't be applied until the cycle is broken"
+			}
+			opts.warnf("dependency cycle detected between stacks %s; %s", strings.Join(cyclic, ", "), consequence)
 		}
 
 		if opts.ExecutionOrderGroups {

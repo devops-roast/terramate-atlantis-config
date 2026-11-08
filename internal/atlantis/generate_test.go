@@ -1280,3 +1280,22 @@ func TestMarshalYAMLHasNoTrailingWhitespace(t *testing.T) {
 		t.Errorf("multi-line strings without trailing whitespace keep the literal style:\n%s", out)
 	}
 }
+
+// With depends_on, a cycle makes the projects impossible to apply in
+// Atlantis; the warning must say so rather than only mention ordering.
+func TestDependencyCycleWarningMentionsDependsOn(t *testing.T) {
+	t.Parallel()
+
+	var warnings []string
+	mustGenerate(t, []discovery.StackInfo{
+		{Dir: "a", AfterDirs: []string{"b"}},
+		{Dir: "b", AfterDirs: []string{"a"}},
+	}, Options{
+		CreateProjectName: true,
+		DependsOn:         true,
+		Warnf:             func(format string, args ...any) { warnings = append(warnings, fmt.Sprintf(format, args...)) },
+	})
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "stacks a, b;") || !strings.Contains(warnings[0], "can't be applied") {
+		t.Fatalf("unexpected warnings: %q", warnings)
+	}
+}
