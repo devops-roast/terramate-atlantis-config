@@ -14,11 +14,15 @@ import (
 // These tests run the generated workflow commands with the real terramate
 // (and terraform) binaries, the way Atlantis does: through `sh -c` from the
 // project directory with PLANFILE set. They are skipped when the binaries are
-// not installed; the Atlantis e2e suite covers the same path in CI.
+// not installed, unless REQUIRE_TERRAMATE_CLI is set (as in CI), in which case
+// a missing binary fails the test instead of silently skipping it.
 
 func requireBinary(t *testing.T, name string) {
 	t.Helper()
 	if _, err := exec.LookPath(name); err != nil {
+		if os.Getenv("REQUIRE_TERRAMATE_CLI") != "" {
+			t.Fatalf("%s not found in PATH and REQUIRE_TERRAMATE_CLI is set", name)
+		}
 		t.Skipf("%s not found in PATH", name)
 	}
 }

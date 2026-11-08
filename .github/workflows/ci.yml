@@ -23,9 +23,33 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
+      - name: Install terraform and terramate
+        # Same pinned versions as e2e/Dockerfile.atlantis. cmd/terramate_cli_test.go
+        # runs the generated workflow commands with these binaries.
+        env:
+          TERRAFORM_VERSION: 1.17.1
+          TERRAMATE_VERSION: 0.17.3
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"
+          cd "$tmp"
+          curl -fsSLO "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip"
+          curl -fsSLO "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_SHA256SUMS"
+          grep " terraform_${TERRAFORM_VERSION}_linux_amd64.zip\$" "terraform_${TERRAFORM_VERSION}_SHA256SUMS" | sha256sum -c -
+          curl -fsSLO "https://github.com/terramate-io/terramate/releases/download/v${TERRAMATE_VERSION}/terramate_${TERRAMATE_VERSION}_linux_x86_64.tar.gz"
+          curl -fsSLO "https://github.com/terramate-io/terramate/releases/download/v${TERRAMATE_VERSION}/checksums.txt"
+          grep " terramate_${TERRAMATE_VERSION}_linux_x86_64.tar.gz\$" checksums.txt | sha256sum -c -
+          mkdir -p "$HOME/.local/bin"
+          unzip -q -o "terraform_${TERRAFORM_VERSION}_linux_amd64.zip" terraform -d "$HOME/.local/bin"
+          tar -xzf "terramate_${TERRAMATE_VERSION}_linux_x86_64.tar.gz" -C "$HOME/.local/bin" terramate
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/terraform" version
+          "$HOME/.local/bin/terramate" version
       - run: go mod download
       - run: go vet ./...
       - run: go test -race -count=1 ./...
+        env:
+          REQUIRE_TERRAMATE_CLI: "1"
 
   lint:
     name: lint

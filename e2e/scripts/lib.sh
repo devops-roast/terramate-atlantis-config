@@ -101,6 +101,39 @@ open_pr() {
 	log "PR #${PR_NUMBER} ${GITEA_URL}/${GITEA_ADMIN_USER}/${TEST_REPO}/pulls/${PR_NUMBER}"
 }
 
+# advance_main: push a new commit to main that the current branch does not
+# have, so the pull request branch is behind its base branch (the usual state
+# of an open pull request). Stays on the current branch.
+advance_main() {
+	git checkout -q main
+	printf 'main moved at %s\n' "$(date +%s)-${RANDOM}" >"e2e-main-advanced-$(date +%s)-${RANDOM}.txt"
+	git add -A
+	git -c user.name="E2E Bot" -c user.email="e2e@test.local" commit -q -m "E2E: advance main"
+	git push -q origin main 2>/dev/null
+	git checkout -q "$BRANCH"
+	log "main advanced past ${BRANCH}"
+}
+
+# push_commit MESSAGE: commit everything and push it to the open pull request.
+# Pushes do not trigger autoplan; comment "atlantis plan" afterwards.
+push_commit() {
+	git add -A
+	git -c user.name="E2E Bot" -c user.email="e2e@test.local" commit -q -m "$1"
+	git push -q origin "$BRANCH" 2>/dev/null
+	log "pushed: $1"
+}
+
+# assert_comment_count TEXT N: TEXT appears exactly N times in LAST_COMMENT.
+assert_comment_count() {
+	local text="$1" want="$2" got
+	got=$(grep -oF -- "$text" <<<"$LAST_COMMENT" | wc -l | tr -d ' ')
+	[ "$got" = "$want" ] || {
+		printf '%s\n' "$LAST_COMMENT" >&2
+		fail "expected ${want} occurrence(s) of '${text}', found ${got}"
+	}
+	pass "'${text}' appears ${want} time(s)"
+}
+
 # comment BODY: post a comment (e.g. "atlantis apply") on the pull request.
 # It is written by the developer account, because Atlantis ignores comments
 # from its own account.
