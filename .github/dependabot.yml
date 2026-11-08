@@ -1,0 +1,23 @@
+---
+version: 2
+updates:
+  # Atlantis image used by the E2E suite (e2e/Dockerfile.atlantis).
+  - package-ecosystem: docker
+    directory: /e2e
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: test
+  # Gitea image used by the E2E suite (e2e/docker-compose.yaml).
+  - package-ecosystem: docker-compose
+    directory: /e2e
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: test
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci

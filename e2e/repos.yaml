@@ -1,7 +1,8 @@
 # Atlantis server-side repository configuration.
 # This runs terramate-atlantis-config as a pre-workflow hook so that
 # atlantis.yaml is dynamically generated from the Terramate stacks
-# found in every pull request.
+# found in every pull request. Scenarios can tune the generator per pull
+# request by committing a .terramate-atlantis.yaml config file.
 
 repos:
   - id: /.*/
@@ -22,9 +23,12 @@ workflows:
     apply:
       steps:
         - apply
+  # The echo marker lets E2E scenarios assert that a stack's
+  # atlantis_workflow global was honoured.
   production:
     plan:
       steps:
+        - run: echo "e2e-workflow=production"
         - init
         - plan
     apply:

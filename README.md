@@ -411,13 +411,32 @@ jobs:
   check-atlantis-config:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: devops-roast/terramate-atlantis-config@v1
+        id: atlantis
         with:
           root: "."
           output: atlantis.yaml
           check: "true"
+      - run: echo "${{ steps.atlantis.outputs.projects }} projects"
 ```
+
+The action downloads the release binary for the runner (Linux, macOS or Windows; amd64 or arm64) and verifies it against the release's `checksums.txt`.
+
+| Input     | Default         | Description                                                                                        |
+| --------- | --------------- | -------------------------------------------------------------------------------------------------- |
+| `version` | `latest`        | `latest`, a release tag such as `v1.1.0`, or any other git ref (built with `go install`, needs Go) |
+| `root`    | `.`             | Root directory of the Terramate project                                                            |
+| `output`  | `atlantis.yaml` | Output file path                                                                                   |
+| `check`   | `false`         | Fail if the output file is out of date                                                             |
+| `args`    |                 | Extra whitespace-separated arguments for `generate`                                                |
+
+| Output     | Description                                                  |
+| ---------- | ------------------------------------------------------------ |
+| `projects` | Number of projects in the generated configuration (any mode) |
+| `version`  | Installed version                                            |
+
+`@v1` follows the latest `v1.x.y` release; pin a full tag such as `@v1.1.0` for reproducible builds.
 
 **pre-commit** — regenerate on every commit:
 
@@ -427,11 +446,10 @@ repos:
     rev: v1
     hooks:
       - id: terramate-atlantis-config
-        args: [--output, atlantis.yaml]
 ```
 
 > [!NOTE]
-> The pre-commit hook regenerates `atlantis.yaml` in place. Stage the updated file as part of your commit or let your CI catch any drift with `--check`.
+> The pre-commit hook writes `atlantis.yaml` at the repository root (override with `args: [--output, path/to/atlantis.yaml]`). Stage the updated file as part of your commit or let your CI catch any drift with `--check`.
 
 ## 🤝 Contributing
 
@@ -456,6 +474,7 @@ Contributions are welcome! To suggest an enhancement, report a bug, or submit a 
    make lint     # run linters
    make build    # build binary
    make check    # full CI check (vet + fmt + test)
+   make e2e      # end-to-end tests against real Atlantis + Gitea (needs Docker, see e2e/README.md)
    make help     # list all targets
    ```
 1. Commit your changes, push them to the repository 🚀, and open a new pull request.
