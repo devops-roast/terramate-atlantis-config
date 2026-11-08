@@ -62,13 +62,14 @@ func validateConfig(cfg atlantis.Config) []string {
 	allNamedByDirWorkspace := map[string]bool{}
 	seenNames := map[string]struct{}{}
 	for i, project := range cfg.Projects {
-		if project.Dir == "" {
+		switch {
+		case project.Dir == "":
 			issues = append(issues, fmt.Sprintf("projects[%d]: dir is required", i))
-		} else if hasDotDotSegment(project.Dir) {
+		case hasDotDotSegment(project.Dir):
 			// Atlantis rejects dirs containing "..": a project must stay
 			// inside the repository.
 			issues = append(issues, fmt.Sprintf("projects[%d]: dir %q must not contain '..'", i, project.Dir))
-		} else {
+		default:
 			workspace := project.Workspace
 			if workspace == "" {
 				workspace = "default"
