@@ -8,7 +8,10 @@ branding:
 
 inputs:
   version:
-    description: Version of terramate-atlantis-config to install
+    description: >-
+      Version to install: "latest", a release tag such as "v1.1.0" (downloaded
+      from GitHub Releases and verified against checksums.txt), or any other
+      git ref such as "main" (built with `go install`, requires Go).
     required: false
     default: latest
   root:
@@ -20,52 +23,142 @@ inputs:
     required: false
     default: atlantis.yaml
   args:
-    description: Additional arguments to pass to the generate command
+    description: Additional whitespace-separated arguments for the generate command
     required: false
     default: ""
   check:
-    description: Run in check mode (fail if atlantis.yaml is out of date)
+    description: Run in check mode (fail if the output file is out of date)
     required: false
     default: "false"
 
 outputs:
   projects:
-    description: Number of projects generated
-    value: ${{ steps.generate.outputs.projects }}
+    description: Number of projects in the generated configuration
+    value: ${{ steps.count.outputs.projects }}
+  version:
+    description: Installed version of terramate-atlantis-config
+    value: ${{ steps.install.outputs.version }}
 
 runs:
   using: composite
   steps:
     - name: Install terramate-atlantis-config
+      id: install
       shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+        REPO: devops-roast/terramate-atlantis-config
       run: |
-        if [ "${{ inputs.version }}" = "latest" ]; then
-          go install github.com/devops-roast/terramate-atlantis-config@latest
-        else
-          go install github.com/devops-roast/terramate-atlantis-config@${{ inputs.version }}
+        set -euo pipefail
+
+        case "$RUNNER_OS" in
+          Linux) os=linux ;;
+          macOS) os=darwin ;;
+          Windows) os=windows ;;
+          *) echo "::error::unsupported runner OS: $RUNNER_OS"; exit 1 ;;
+        esac
+        case "$RUNNER_ARCH" in
+          X64) arch=amd64 ;;
+          ARM64) arch=arm64 ;;
+          *) echo "::error::unsupported runner architecture: $RUNNER_ARCH"; exit 1 ;;
+        esac
+
+        bin_dir="${RUNNER_TEMP}/terramate-atlantis-config/bin"
+        mkdir -p "$bin_dir"
+
+        if [ "$VERSION" = "latest" ]; then
+          # github.com/<repo>/releases/latest redirects to .../releases/tag/<tag>.
+          latest_url=$(curl -fsSL -o /dev/null -w '%{url_effective}' "https://github.com/${REPO}/releases/latest")
+          VERSION="${latest_url##*/}"
         fi
+
+        if [[ "$VERSION" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          tag="v${VERSION#v}"
+          ext=tar.gz
+          [ "$os" = windows ] && ext=zip
+          archive="terramate-atlantis-config_${tag#v}_${os}_${arch}.${ext}"
+          base_url="https://github.com/${REPO}/releases/download/${tag}"
+
+          tmp=$(mktemp -d)
+          curl -fsSL -o "${tmp}/${archive}" "${base_url}/${archive}"
+          curl -fsSL -o "${tmp}/checksums.txt" "${base_url}/checksums.txt"
+          (
+            cd "$tmp"
+            grep " ${archive}\$" checksums.txt >expected.txt || {
+              echo "::error::${archive} is not listed in checksums.txt"
+              exit 1
+            }
+            if command -v sha256sum >/dev/null; then
+              sha256sum -c expected.txt
+            else
+              shasum -a 256 -c expected.txt
+            fi
+          )
+          if [ "$ext" = zip ]; then
+            unzip -q -o "${tmp}/${archive}" -d "$tmp/extract"
+          else
+            mkdir -p "$tmp/extract"
+            tar -xzf "${tmp}/${archive}" -C "$tmp/extract"
+          fi
+          find "$tmp/extract" -name 'terramate-atlantis-config*' -type f -exec cp {} "$bin_dir/" \;
+          chmod +x "$bin_dir"/terramate-atlantis-config*
+          rm -rf "$tmp"
+          VERSION="$tag"
+        else
+          if ! command -v go >/dev/null; then
+            echo "::error::version '${VERSION}' is not a release tag, so it is built with 'go install', but Go is not installed (use actions/setup-go)"
+            exit 1
+          fi
+          GOBIN="$bin_dir" go install "github.com/${REPO}@${VERSION}"
+        fi
+
+        echo "$bin_dir" >>"$GITHUB_PATH"
+        echo "version=${VERSION}" >>"$GITHUB_OUTPUT"
+        "$bin_dir/terramate-atlantis-config" version
 
     - name: Generate atlantis.yaml
-      id: generate
       shell: bash
+      env:
+        ROOT: ${{ inputs.root }}
+        OUTPUT: ${{ inputs.output }}
+        ARGS: ${{ inputs.args }}
+        CHECK: ${{ inputs.check }}
       run: |
-        ARGS="--root ${{ inputs.root }} --output ${{ inputs.output }}"
+        set -euo pipefail
 
-        if [ "${{ inputs.check }}" = "true" ]; then
-          ARGS="$ARGS --check"
+        cmd=(terramate-atlantis-config generate --root "$ROOT" --output "$OUTPUT")
+        if [ "$CHECK" = "true" ]; then
+          cmd+=(--check)
+        fi
+        read -r -a extra <<<"$ARGS"
+        cmd+=(${extra[@]+"${extra[@]}"})
+
+        echo "+ ${cmd[*]}"
+        "${cmd[@]}"
+
+    - name: Count projects
+      id: count
+      if: always()
+      shell: bash
+      env:
+        ROOT: ${{ inputs.root }}
+        ARGS: ${{ inputs.args }}
+      run: |
+        set -uo pipefail
+
+        # Render the same configuration as JSON on stdout, so the count works
+        # in every mode (including --check, which writes nothing).
+        read -r -a extra <<<"$ARGS"
+        if ! json=$(terramate-atlantis-config generate --root "$ROOT" ${extra[@]+"${extra[@]}"} --output - --format json 2>/dev/null); then
+          echo "::warning::could not count generated projects"
+          echo "projects=0" >>"$GITHUB_OUTPUT"
+          exit 0
         fi
 
-        if [ -n "${{ inputs.args }}" ]; then
-          ARGS="$ARGS ${{ inputs.args }}"
+        if command -v jq >/dev/null; then
+          projects=$(jq '.projects | length' <<<"$json")
+        else
+          projects=$(grep -c '"dir":' <<<"$json" || true)
         fi
-
-        OUTPUT=$(terramate-atlantis-config generate $ARGS 2>&1) || {
-          echo "$OUTPUT"
-          exit 1
-        }
-
-        echo "$OUTPUT"
-
-        # Extract project count from stderr output
-        PROJECTS=$(echo "$OUTPUT" | grep -oP 'with \K[0-9]+' || echo "0")
-        echo "projects=$PROJECTS" >> "$GITHUB_OUTPUT"
+        echo "projects=${projects}" >>"$GITHUB_OUTPUT"
+        echo "Generated configuration has ${projects} projects"

@@ -64,3 +64,75 @@ jobs:
         with:
           name: terramate-atlantis-config-${{ matrix.goos }}-${{ matrix.goarch }}
           path: terramate-atlantis-config-*
+
+  action:
+    name: action (${{ matrix.os }}, ${{ matrix.install }})
+    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        install: [release, source]
+    env:
+      # "source" builds this commit with `go install`; fetch it straight from
+      # GitHub because the module proxy may not have it yet.
+      GOPROXY: direct
+      GONOSUMDB: github.com/devops-roast/*
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        if: matrix.install == 'source'
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Set output path
+        run: echo "OUTPUT=${RUNNER_TEMP}/atlantis.yaml" >>"$GITHUB_ENV"
+
+      - name: Generate
+        id: generate
+        uses: ./
+        with:
+          version: ${{ matrix.install == 'source' && (github.event.pull_request.head.sha || github.sha) || 'latest' }}
+          root: testdata/multi
+          output: ${{ env.OUTPUT }}
+      - name: Assert generate outputs
+        env:
+          PROJECTS: ${{ steps.generate.outputs.projects }}
+          VERSION: ${{ steps.generate.outputs.version }}
+        run: |
+          echo "installed ${VERSION}, ${PROJECTS} projects"
+          test -s "$OUTPUT"
+          test "$PROJECTS" = 3
+
+      - name: Check (up to date)
+        id: check
+        uses: ./
+        with:
+          version: ${{ steps.generate.outputs.version }}
+          root: testdata/multi
+          output: ${{ env.OUTPUT }}
+          check: "true"
+      - name: Assert check outputs
+        env:
+          PROJECTS: ${{ steps.check.outputs.projects }}
+        run: test "$PROJECTS" = 3
+
+      - name: Make output stale
+        run: echo "# stale" >>"$OUTPUT"
+      - name: Check (stale)
+        id: stale
+        continue-on-error: true
+        uses: ./
+        with:
+          version: ${{ steps.generate.outputs.version }}
+          root: testdata/multi
+          output: ${{ env.OUTPUT }}
+          check: "true"
+      - name: Assert stale check failed
+        env:
+          OUTCOME: ${{ steps.stale.outcome }}
+          PROJECTS: ${{ steps.stale.outputs.projects }}
+        run: |
+          test "$OUTCOME" = failure
+          test "$PROJECTS" = 3
