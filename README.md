@@ -247,6 +247,11 @@ See [Workflows](#workflows) for how workflows are generated, assigned and merged
 
 `--check` and `--diff` compare against the output file, so they need `--output` (or `output` in the config file). They never write the file. Exit code `0` means up to date, `1` means stale or failed.
 
+**Other commands**
+
+- `terramate-atlantis-config validate atlantis.yaml` checks an existing file: `version: 3`, a `dir` for every project, valid and unique project names, no two unnamed projects sharing a dir and workspace, and `depends_on` entries that name existing projects. A project whose workflow isn't defined in the file only gets a warning, since Atlantis also looks it up in the server-side repo config. Exits `1` on any error.
+- `terramate-atlantis-config version` prints the version, commit and build date.
+
 ### Per-stack globals
 
 Set Terramate globals in any stack to override defaults for that project.
