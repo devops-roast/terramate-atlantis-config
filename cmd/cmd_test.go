@@ -415,6 +415,22 @@ func TestValidateCommand(t *testing.T) {
 	assert.Contains(t, res.stderr, "accepts 1 arg(s), received 0")
 }
 
+// A file may use server-side workflows next to its own, as generate does
+// with --generate-workflows and an atlantis_workflow global naming a server
+// workflow; Atlantis accepts it, so validate must too.
+func TestValidateAcceptsServerSideWorkflows(t *testing.T) {
+	root := newFixture(t)
+	writeFile(t, filepath.Join(root, "stacks", "prod", "globals.tm.hcl"), "globals {\n  atlantis_workflow = \"production\"\n}\n")
+	out := filepath.Join(t.TempDir(), "atlantis.yaml")
+	require.Equal(t, 0, generateTo(t, root, out, "--generate-workflows").code)
+
+	res := run(t, "validate", out)
+
+	assert.Equal(t, 0, res.code, res.stderr)
+	assert.Equal(t, out+" is valid\n", res.stdout)
+	assert.Equal(t, `Warning: project "prod" uses workflow "production", which this file does not define; it must be defined in the server-side repo config`+"\n", res.stderr)
+}
+
 func TestVersionCommand(t *testing.T) {
 	res := run(t, "version")
 

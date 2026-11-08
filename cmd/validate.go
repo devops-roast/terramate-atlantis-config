@@ -31,6 +31,10 @@ func runValidate(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("invalid YAML syntax: %w", err)
 	}
 
+	for _, warning := range workflowWarnings(cfg) {
+		fmt.Fprintf(cmd.ErrOrStderr(), "Warning: %s\n", warning)
+	}
+
 	errors := validateConfig(cfg)
 	if len(errors) > 0 {
 		for _, validationErr := range errors {
@@ -88,12 +92,6 @@ func validateConfig(cfg atlantis.Config) []string {
 				issues = append(issues, fmt.Sprintf("invalid project name: %s (must contain only URL safe characters)", project.Name))
 			}
 		}
-
-		if project.Workflow != "" && len(cfg.Workflows) > 0 {
-			if _, exists := cfg.Workflows[project.Workflow]; !exists {
-				issues = append(issues, fmt.Sprintf("project %q references unknown workflow %q", project.Dir, project.Workflow))
-			}
-		}
 	}
 
 	// Atlantis matches depends_on entries against project names.
@@ -110,6 +108,30 @@ func validateConfig(cfg atlantis.Config) []string {
 	}
 
 	return issues
+}
+
+// workflowWarnings reports projects whose workflow is not defined in the
+// file. That is not an error: Atlantis also looks the name up in the
+// server-side repo config, so a file may mix its own workflows with
+// server-side ones (e.g. --generate-workflows plus an atlantis_workflow
+// global naming a server workflow). Only a file that defines workflows is
+// checked; otherwise every workflow is server-side.
+func workflowWarnings(cfg atlantis.Config) []string {
+	if len(cfg.Workflows) == 0 {
+		return nil
+	}
+	var warnings []string
+	for _, project := range cfg.Projects {
+		if project.Workflow == "" {
+			continue
+		}
+		if _, exists := cfg.Workflows[project.Workflow]; !exists {
+			warnings = append(warnings, fmt.Sprintf(
+				"project %q uses workflow %q, which this file does not define; it must be defined in the server-side repo config",
+				projectRef(project), project.Workflow))
+		}
+	}
+	return warnings
 }
 
 func projectRef(project atlantis.Project) string {

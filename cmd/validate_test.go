@@ -116,7 +116,7 @@ func TestValidateConfig(t *testing.T) {
 			},
 		},
 		{
-			name: "invalid names, missing dir, wrong version, unknown workflow",
+			name: "invalid names, missing dir, wrong version",
 			cfg: atlantis.Config{
 				Version: 2,
 				Projects: []atlantis.Project{
@@ -131,7 +131,6 @@ func TestValidateConfig(t *testing.T) {
 				"invalid project name: my stack (must contain only URL safe characters)",
 				"projects[1]: dir is required",
 				"duplicate project name: ok",
-				`project "b" references unknown workflow "nope"`,
 			},
 		},
 	}
