@@ -3,15 +3,12 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"regexp"
 
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 
 	"github.com/devops-roast/terramate-atlantis-config/internal/atlantis"
 )
-
-var projectNameRe = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 
 func newValidateCmd() *cobra.Command {
 	return &cobra.Command{
@@ -52,16 +49,23 @@ func validateConfig(cfg atlantis.Config) []string {
 		issues = append(issues, "version must be 3")
 	}
 
-	seenDirs := map[string]struct{}{}
+	// Atlantis identifies a project by dir + workspace, so the same dir may
+	// appear several times with different workspaces.
+	seenDirWorkspaces := map[string]struct{}{}
 	seenNames := map[string]struct{}{}
 	for i, project := range cfg.Projects {
 		if project.Dir == "" {
 			issues = append(issues, fmt.Sprintf("projects[%d]: dir is required", i))
 		} else {
-			if _, exists := seenDirs[project.Dir]; exists {
-				issues = append(issues, fmt.Sprintf("duplicate project dir: %s", project.Dir))
+			workspace := project.Workspace
+			if workspace == "" {
+				workspace = "default"
 			}
-			seenDirs[project.Dir] = struct{}{}
+			key := project.Dir + "\x00" + workspace
+			if _, exists := seenDirWorkspaces[key]; exists {
+				issues = append(issues, fmt.Sprintf("duplicate project dir: %s (workspace %s)", project.Dir, workspace))
+			}
+			seenDirWorkspaces[key] = struct{}{}
 		}
 
 		if project.Name != "" {
@@ -70,8 +74,8 @@ func validateConfig(cfg atlantis.Config) []string {
 			}
 			seenNames[project.Name] = struct{}{}
 
-			if !projectNameRe.MatchString(project.Name) {
-				issues = append(issues, fmt.Sprintf("invalid project name: %s", project.Name))
+			if !atlantis.ValidProjectName(project.Name) {
+				issues = append(issues, fmt.Sprintf("invalid project name: %s (must contain only URL safe characters)", project.Name))
 			}
 		}
 
@@ -82,5 +86,25 @@ func validateConfig(cfg atlantis.Config) []string {
 		}
 	}
 
+	// Atlantis matches depends_on entries against project names.
+	for _, project := range cfg.Projects {
+		for _, dep := range project.DependsOn {
+			if project.Name != "" && dep == project.Name {
+				issues = append(issues, fmt.Sprintf("project %q depends on itself", project.Name))
+				continue
+			}
+			if _, exists := seenNames[dep]; !exists {
+				issues = append(issues, fmt.Sprintf("project %q depends_on unknown project name %q", projectRef(project), dep))
+			}
+		}
+	}
+
 	return issues
+}
+
+func projectRef(project atlantis.Project) string {
+	if project.Name != "" {
+		return project.Name
+	}
+	return project.Dir
 }

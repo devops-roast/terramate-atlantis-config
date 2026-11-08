@@ -155,10 +155,12 @@ Logs go to stderr and never mix with the generated config on stdout.
 
 **Dependencies**
 
-| Flag                       | Default | Description                                        |
-| -------------------------- | ------- | -------------------------------------------------- |
-| `--execution-order-groups` | `false` | Add execution order groups from stack dependencies |
-| `--depends-on`             | `false` | Add `depends_on` from stack dependencies           |
+| Flag                       | Default | Description                                              |
+| -------------------------- | ------- | -------------------------------------------------------- |
+| `--execution-order-groups` | `false` | Add execution order groups from stack dependencies       |
+| `--depends-on`             | `false` | Add `depends_on` (project names) from stack dependencies |
+
+See [Dependencies](#dependencies) for how `after`/`before` are resolved.
 
 **Workflows**
 
@@ -218,14 +220,44 @@ globals {
 
 Project names are derived from stack paths. Four strategies control the format:
 
-| Strategy     | Behavior                                           | Example (`stacks/aws/prod/eu-west-1/db/billing`) |
-| ------------ | -------------------------------------------------- | ------------------------------------------------ |
-| `auto-strip` | Strips the longest common prefix across all stacks | `prod-eu-west-1-db-billing`                      |
-| `stack-name` | Uses the stack's `name` field with parent context  | `eu-west-1-db-billing`                           |
-| `last-n`     | Uses the last N path segments                      | `db-billing` (depth=2)                           |
-| `full`       | Full path, no stripping                            | `stacks-aws-prod-eu-west-1-db-billing`           |
+| Strategy     | Behavior                                                         | Example (`stacks/aws/prod/eu-west-1/db/billing`) |
+| ------------ | ---------------------------------------------------------------- | ------------------------------------------------ |
+| `auto-strip` | Strips the longest common prefix across all stacks               | `prod-eu-west-1-db-billing`                      |
+| `stack-name` | Uses the stack's `name` field, prefixed with up to 3 parent dirs | `prod-eu-west-1-db-billing`                      |
+| `last-n`     | Uses the last N path segments                                    | `db-billing` (depth=2)                           |
+| `full`       | Full path, no stripping                                          | `stacks-aws-prod-eu-west-1-db-billing`           |
 
-If two stacks would produce the same name, the tool adds parent segments until names are unique.
+- **Names are stable.** They are always computed against every stack in the repository (except those with `atlantis_skip`), so `--changed`, `--filter`, `--filter-path` and `--exclude-*` never rename a project.
+- **Names are unique.** If two stacks would produce the same name, the tool adds parent segments until they differ, and falls back to the full path (then a numeric suffix) as a last resort.
+- **Names are valid.** Characters Atlantis rejects in project names (anything that isn't URL safe, such as spaces) are replaced with `-`.
+- `--project-name-prefix` only strips whole path segments: `stacks/aws/prod` strips `stacks/aws/prod/vpc` but not `stacks/aws/production/vpc`.
+- A stack at the repository root gets `dir: .` and the name `root`.
+
+### Dependencies
+
+With `--depends-on` and/or `--execution-order-groups`, stack ordering is read from each stack's `after` and `before` attributes, with the same semantics as `terramate run`:
+
+- relative (`../vpc`) and absolute (`/stacks/network/vpc`) paths;
+- a directory that isn't a stack expands to every stack below it;
+- tag queries such as `tag:network` expand to every stack matching the [tag filter](https://terramate.io/docs/cli/reference/cmdline/run#--tags).
+
+`depends_on` lists **project names**, which is what Atlantis matches it against, so `--depends-on` requires `--create-project-name` (the default). Dependencies on stacks that aren't part of the generated config (filtered out or skipped) are dropped, and a dependency cycle is reported as a warning.
+
+```hcl
+stack {
+  name  = "api"
+  after = ["../dns", "tag:database"]
+}
+```
+
+```yaml
+- name: app-api
+  dir: stacks/app/api
+  execution_order_group: 3
+  depends_on:
+    - data-rds
+    - network-dns
+```
 
 ## 💡 Recipes
 

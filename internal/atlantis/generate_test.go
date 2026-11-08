@@ -1,12 +1,25 @@
 package atlantis
 
 import (
+	"errors"
+	"fmt"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 
 	"github.com/devops-roast/terramate-atlantis-config/internal/discovery"
 )
+
+func mustGenerate(t *testing.T, stacks []discovery.StackInfo, opts Options) Config {
+	t.Helper()
+
+	cfg, err := Generate(stacks, opts)
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+	return cfg
+}
 
 func TestGenerate(t *testing.T) {
 	t.Parallel()
@@ -332,7 +345,7 @@ func TestGenerate(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			got := Generate(tc.stacks, tc.opts)
+			got := mustGenerate(t, tc.stacks, tc.opts)
 			if !reflect.DeepEqual(got, tc.want) {
 				t.Fatalf("unexpected config: got %#v, want %#v", got, tc.want)
 			}
@@ -462,15 +475,16 @@ func TestGenerateExecutionOrderGroupsAndDependsOn(t *testing.T) {
 	t.Parallel()
 
 	stacks := []discovery.StackInfo{
-		{Dir: "env/a", After: []string{"../b"}},
+		{Dir: "env/a", After: []string{"../b"}, AfterDirs: []string{"env/b"}},
 		{Dir: "env/b"},
-		{Dir: "env/c", Before: []string{"../b"}},
+		{Dir: "env/c", Before: []string{"../b"}, BeforeDirs: []string{"env/b"}},
 	}
 
-	cfg := Generate(stacks, Options{
+	cfg := mustGenerate(t, stacks, Options{
 		Autoplan:             true,
 		Parallel:             true,
 		WhenModified:         []string{"*.tf"},
+		CreateProjectName:    true,
 		ExecutionOrderGroups: true,
 		DependsOn:            true,
 	})
@@ -496,11 +510,13 @@ func TestGenerateExecutionOrderGroupsAndDependsOn(t *testing.T) {
 		t.Fatalf("env/a group: got %d, want 2", projects["env/a"].ExecutionOrderGroup)
 	}
 
-	if !reflect.DeepEqual(projects["env/a"].DependsOn, []string{"env/b"}) {
+	// depends_on must reference project names, not dirs: Atlantis matches
+	// depends_on entries against project names.
+	if !reflect.DeepEqual(projects["env/a"].DependsOn, []string{"b"}) {
 		t.Fatalf("env/a depends_on: got %#v", projects["env/a"].DependsOn)
 	}
 
-	if !reflect.DeepEqual(projects["env/b"].DependsOn, []string{"env/c"}) {
+	if !reflect.DeepEqual(projects["env/b"].DependsOn, []string{"c"}) {
 		t.Fatalf("env/b depends_on: got %#v", projects["env/b"].DependsOn)
 	}
 }
@@ -538,7 +554,7 @@ func TestGenerateApplyRequirementsPrecedence(t *testing.T) {
 		{Dir: "stack/c"},
 	}
 
-	cfg := Generate(stacks, Options{
+	cfg := mustGenerate(t, stacks, Options{
 		Autoplan:          true,
 		Parallel:          true,
 		WhenModified:      []string{"*.tf"},
@@ -569,7 +585,7 @@ func TestGenerateApplyRequirementsPrecedence(t *testing.T) {
 func TestGenerateCreateWorkspace(t *testing.T) {
 	t.Parallel()
 
-	cfg := Generate([]discovery.StackInfo{{Dir: "aws/prod"}}, Options{
+	cfg := mustGenerate(t, []discovery.StackInfo{{Dir: "aws/prod"}}, Options{
 		Autoplan:        true,
 		Parallel:        true,
 		WhenModified:    []string{"*.tf"},
@@ -594,7 +610,7 @@ func TestGenerateTagWorkflowPrecedence(t *testing.T) {
 		{Dir: "stack/c"},
 	}
 
-	cfg := Generate(stacks, Options{
+	cfg := mustGenerate(t, stacks, Options{
 		Autoplan:        true,
 		Parallel:        true,
 		WhenModified:    []string{"*.tf"},
@@ -631,7 +647,7 @@ func TestProjectNameStrategyAutoStrip(t *testing.T) {
 		{Dir: "stacks/aws/staging/vpc"},
 	}
 
-	cfg := Generate(stacks, Options{
+	cfg := mustGenerate(t, stacks, Options{
 		Autoplan:          true,
 		Parallel:          true,
 		CreateProjectName: true,
@@ -649,13 +665,15 @@ func TestProjectNameStrategyAutoStrip(t *testing.T) {
 func TestProjectNameStrategyAutoStripSingleStack(t *testing.T) {
 	t.Parallel()
 
-	cfg := Generate([]discovery.StackInfo{{Dir: "stacks/aws/prod/vpc"}}, Options{
+	cfg := mustGenerate(t, []discovery.StackInfo{{Dir: "stacks/aws/prod/vpc"}}, Options{
 		Autoplan:          true,
 		Parallel:          true,
 		CreateProjectName: true,
 		WhenModified:      []string{"*.tf"},
 	})
 
+	// A lone stack is its own common prefix; stripping must never leave an
+	// empty name, so it keeps its full path.
 	if cfg.Projects[0].Name != "stacks-aws-prod-vpc" {
 		t.Fatalf("single stack auto-strip should keep full path: got %q", cfg.Projects[0].Name)
 	}
@@ -669,7 +687,7 @@ func TestProjectNameStrategyFull(t *testing.T) {
 		{Dir: "stacks/aws/staging/vpc"},
 	}
 
-	cfg := Generate(stacks, Options{
+	cfg := mustGenerate(t, stacks, Options{
 		Autoplan:            true,
 		Parallel:            true,
 		CreateProjectName:   true,
@@ -693,7 +711,7 @@ func TestProjectNameStrategyLastN(t *testing.T) {
 		{Dir: "stacks/aws/staging/us-east-1/vpc"},
 	}
 
-	cfg := Generate(stacks, Options{
+	cfg := mustGenerate(t, stacks, Options{
 		Autoplan:            true,
 		Parallel:            true,
 		CreateProjectName:   true,
@@ -716,7 +734,7 @@ func TestProjectNameStrategyLastNDefaultDepth(t *testing.T) {
 		{Dir: "a/b/c/d/e"},
 	}
 
-	cfg := Generate(stacks, Options{
+	cfg := mustGenerate(t, stacks, Options{
 		Autoplan:            true,
 		Parallel:            true,
 		CreateProjectName:   true,
@@ -737,7 +755,7 @@ func TestProjectNameStrategyStackName(t *testing.T) {
 		{Dir: "stacks/aws/prod/eu-west-1/rds", Name: "rds"},
 	}
 
-	cfg := Generate(stacks, Options{
+	cfg := mustGenerate(t, stacks, Options{
 		Autoplan:            true,
 		Parallel:            true,
 		CreateProjectName:   true,
@@ -759,7 +777,7 @@ func TestProjectNameStrategyStackNameFallsBackToBasename(t *testing.T) {
 		{Dir: "stacks/vpc"},
 	}
 
-	cfg := Generate(stacks, Options{
+	cfg := mustGenerate(t, stacks, Options{
 		Autoplan:            true,
 		Parallel:            true,
 		CreateProjectName:   true,
@@ -781,7 +799,7 @@ func TestProjectNameDisambiguation(t *testing.T) {
 		{Dir: "stacks/aws/staging/eu-west-1/billing", Name: "billing"},
 	}
 
-	cfg := Generate(stacks, Options{
+	cfg := mustGenerate(t, stacks, Options{
 		Autoplan:            true,
 		Parallel:            true,
 		CreateProjectName:   true,
@@ -812,7 +830,7 @@ func TestProjectNameDisambiguationAddsMinimalContext(t *testing.T) {
 		{Dir: "stacks/aws/prod/eu-west-1/vpc"},
 	}
 
-	cfg := Generate(stacks, Options{
+	cfg := mustGenerate(t, stacks, Options{
 		Autoplan:            true,
 		Parallel:            true,
 		CreateProjectName:   true,
@@ -842,7 +860,7 @@ func TestProjectNameExplicitPrefix(t *testing.T) {
 		{Dir: "stacks/aws/prod/rds"},
 	}
 
-	cfg := Generate(stacks, Options{
+	cfg := mustGenerate(t, stacks, Options{
 		Autoplan:          true,
 		Parallel:          true,
 		CreateProjectName: true,
@@ -865,7 +883,7 @@ func TestProjectNameNoCommonPrefix(t *testing.T) {
 		{Dir: "gcp/prod/network"},
 	}
 
-	cfg := Generate(stacks, Options{
+	cfg := mustGenerate(t, stacks, Options{
 		Autoplan:          true,
 		Parallel:          true,
 		CreateProjectName: true,
@@ -888,7 +906,7 @@ func TestProjectNameDeepHierarchyDisambiguation(t *testing.T) {
 		{Dir: "stacks/aws/iris-staging/eu-west-1/db/postgres-1/billing"},
 	}
 
-	cfg := Generate(stacks, Options{
+	cfg := mustGenerate(t, stacks, Options{
 		Autoplan:            true,
 		Parallel:            true,
 		CreateProjectName:   true,
@@ -925,8 +943,8 @@ func TestGenerateSortBy(t *testing.T) {
 	t.Parallel()
 
 	stacks := []discovery.StackInfo{
-		{Dir: "z/prod", After: []string{"/a/prod"}},
-		{Dir: "a/prod", After: []string{"/m/prod"}},
+		{Dir: "z/prod", AfterDirs: []string{"a/prod"}},
+		{Dir: "a/prod", AfterDirs: []string{"m/prod"}},
 		{Dir: "m/prod"},
 	}
 
@@ -956,7 +974,7 @@ func TestGenerateSortBy(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			cfg := Generate(stacks, Options{
+			cfg := mustGenerate(t, stacks, Options{
 				Autoplan:             true,
 				Parallel:             true,
 				WhenModified:         []string{"*.tf"},
@@ -974,5 +992,117 @@ func TestGenerateSortBy(t *testing.T) {
 				t.Fatalf("unexpected project order: got %#v, want %#v", got, tc.wantDir)
 			}
 		})
+	}
+}
+
+func TestGenerateDependsOnUsesProjectNames(t *testing.T) {
+	t.Parallel()
+
+	stacks := []discovery.StackInfo{
+		{Dir: "stacks/aws/acme-production/eu-west-1/dns"},
+		{Dir: "stacks/aws/acme-production/eu-west-1/app", AfterDirs: []string{"stacks/aws/acme-production/eu-west-1/dns"}},
+		{Dir: "stacks/aws/acme-production/eu-west-1/vpc", BeforeDirs: []string{"stacks/aws/acme-production/eu-west-1/app"}},
+	}
+
+	for _, strategy := range []string{NameStrategyAutoStrip, NameStrategyStackName, NameStrategyLastN, NameStrategyFull} {
+		cfg := mustGenerate(t, stacks, Options{
+			CreateProjectName:   true,
+			DependsOn:           true,
+			ProjectNameStrategy: strategy,
+		})
+
+		names := namesByDirOf(cfg)
+		var app Project
+		for _, p := range cfg.Projects {
+			if p.Dir == "stacks/aws/acme-production/eu-west-1/app" {
+				app = p
+			}
+		}
+
+		want := []string{names["stacks/aws/acme-production/eu-west-1/dns"], names["stacks/aws/acme-production/eu-west-1/vpc"]}
+		sort.Strings(want)
+		if !reflect.DeepEqual(app.DependsOn, want) {
+			t.Fatalf("%s: depends_on: got %v, want %v (project names)", strategy, app.DependsOn, want)
+		}
+	}
+}
+
+func TestGenerateDependsOnRequiresProjectNames(t *testing.T) {
+	t.Parallel()
+
+	_, err := Generate([]discovery.StackInfo{{Dir: "a"}}, Options{DependsOn: true})
+	if !errors.Is(err, ErrDependsOnRequiresNames) {
+		t.Fatalf("expected ErrDependsOnRequiresNames, got %v", err)
+	}
+
+	// Execution order groups don't reference names, so they still work.
+	if _, err := Generate([]discovery.StackInfo{{Dir: "a"}}, Options{ExecutionOrderGroups: true}); err != nil {
+		t.Fatalf("execution order groups without names: %v", err)
+	}
+}
+
+func TestGenerateDropsDependenciesOnExcludedStacks(t *testing.T) {
+	t.Parallel()
+
+	stacks := []discovery.StackInfo{
+		{Dir: "a", AfterDirs: []string{"b", "c", "missing"}},
+		{Dir: "b", Skip: true},
+		{Dir: "c"},
+	}
+
+	cfg := mustGenerate(t, stacks, Options{CreateProjectName: true, DependsOn: true, ExecutionOrderGroups: true})
+	byDir := map[string]Project{}
+	for _, p := range cfg.Projects {
+		byDir[p.Dir] = p
+	}
+
+	if !reflect.DeepEqual(byDir["a"].DependsOn, []string{"c"}) {
+		t.Fatalf("depends_on: got %v, want [c]", byDir["a"].DependsOn)
+	}
+	if byDir["a"].ExecutionOrderGroup != 1 {
+		t.Fatalf("execution_order_group: got %d, want 1", byDir["a"].ExecutionOrderGroup)
+	}
+}
+
+func TestGenerateWarnsOnDependencyCycle(t *testing.T) {
+	t.Parallel()
+
+	stacks := []discovery.StackInfo{
+		{Dir: "a", AfterDirs: []string{"b"}},
+		{Dir: "b", AfterDirs: []string{"a"}},
+		{Dir: "c", AfterDirs: []string{"d"}},
+		{Dir: "d"},
+	}
+
+	var warnings []string
+	cfg := mustGenerate(t, stacks, Options{
+		CreateProjectName:    true,
+		ExecutionOrderGroups: true,
+		Warnf: func(format string, args ...any) {
+			warnings = append(warnings, fmt.Sprintf(format, args...))
+		},
+	})
+
+	if len(warnings) != 1 {
+		t.Fatalf("expected 1 warning, got %v", warnings)
+	}
+	if !strings.Contains(warnings[0], "dependency cycle") || !strings.Contains(warnings[0], "a, b") {
+		t.Fatalf("unexpected warning: %q", warnings[0])
+	}
+
+	groups := map[string]int{}
+	for _, p := range cfg.Projects {
+		groups[p.Dir] = p.ExecutionOrderGroup
+	}
+	if !reflect.DeepEqual(groups, map[string]int{"a": 0, "b": 0, "c": 1, "d": 0}) {
+		t.Fatalf("groups: got %v", groups)
+	}
+
+	// No cycle, no warning; a nil Warnf is safe.
+	warnings = nil
+	mustGenerate(t, stacks[2:], Options{ExecutionOrderGroups: true, Warnf: func(string, ...any) { warnings = append(warnings, "x") }})
+	mustGenerate(t, stacks, Options{ExecutionOrderGroups: true})
+	if len(warnings) != 0 {
+		t.Fatalf("unexpected warnings: %v", warnings)
 	}
 }
