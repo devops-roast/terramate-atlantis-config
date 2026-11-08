@@ -64,7 +64,7 @@ e2e: up test ## Full pipeline: build → up → setup → test
 .PHONY: build
 build: $(E2E_DIR)/bin/$(BINARY_NAME) ## Build the binary (linux, static)
 
-$(E2E_DIR)/bin/$(BINARY_NAME): $(PROJECT_ROOT)/main.go $(GO_SRC)
+$(E2E_DIR)/bin/$(BINARY_NAME): $(PROJECT_ROOT)/main.go $(PROJECT_ROOT)/go.mod $(PROJECT_ROOT)/go.sum $(GO_SRC)
 	@mkdir -p $(E2E_DIR)/bin
 	cd $(PROJECT_ROOT) && CGO_ENABLED=0 GOOS=linux go build -o $(E2E_DIR)/bin/$(BINARY_NAME) .
 	@echo "Built $(E2E_DIR)/bin/$(BINARY_NAME)"
