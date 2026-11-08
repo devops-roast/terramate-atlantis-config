@@ -75,12 +75,6 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
         install: [release, source]
-    env:
-      # "source" builds this commit with `go install`. Fetch this module
-      # straight from GitHub (the module proxy may not have the commit yet);
-      # dependencies still come through the proxy.
-      GOPRIVATE: github.com/devops-roast/*
-      GIT_TERMINAL_PROMPT: "0"
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
@@ -95,7 +89,10 @@ jobs:
         id: generate
         uses: ./
         with:
-          version: ${{ matrix.install == 'source' && (github.event.pull_request.head.sha || github.sha) || 'latest' }}
+          # "source" exercises the action's `go install` path with a branch
+          # ref. Building this PR's own commit would need direct git fetches,
+          # which are flaky on runners ("shallow file has changed").
+          version: ${{ matrix.install == 'source' && 'main' || 'latest' }}
           root: testdata/multi
           output: ${{ env.OUTPUT }}
       - name: Assert generate outputs
