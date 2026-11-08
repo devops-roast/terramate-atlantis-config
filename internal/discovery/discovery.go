@@ -47,8 +47,9 @@ type StackInfo struct {
 
 	// AfterDirs and BeforeDirs are the stack.after/stack.before entries
 	// resolved to stack directories (same format as Dir), following
-	// Terramate's own ordering semantics: "tag:" queries expand to every
-	// matching stack, and a path expands to every stack at or below it.
+	// Terramate's own ordering semantics: a path expands to every stack at
+	// or below it, and a "tag:" query to every stack at or below the
+	// matching stacks.
 	AfterDirs  []string
 	BeforeDirs []string
 
@@ -332,10 +333,10 @@ func resolveOrder(root *config.Root, stack *config.Stack) stackOrder {
 }
 
 // resolveOrderEntries resolves stack.after / stack.before entries to stack
-// directories the same way `terramate run` orders stacks: "tag:<filter>"
-// entries select every stack matching the tag filter, and path entries
+// directories the same way `terramate run` orders stacks: path entries
 // (relative to the stack, or absolute from the project root) select every
-// stack at or below that directory. The stack itself is never included.
+// stack at or below that directory, and "tag:<filter>" entries select every
+// stack at or below the stacks matching the tag filter. The stack itself is never included.
 // Paths that don't exist are ignored, as Terramate does.
 func resolveOrderEntries(root *config.Root, stack *config.Stack, entries []string) ([]string, error) {
 	if len(entries) == 0 {
@@ -346,20 +347,25 @@ func resolveOrderEntries(root *config.Root, stack *config.Stack, entries []strin
 	resolved := map[string]struct{}{}
 
 	for _, entry := range entries {
+		paths := []string{entry}
 		if filter, ok := strings.CutPrefix(entry, "tag:"); ok {
-			paths, err := root.StacksByTagsFilters([]string{filter})
+			// Like `terramate run`, a tag query selects the matching
+			// stacks' dirs, which then expand like any path entry: to the
+			// matching stacks and every stack nested below them.
+			tagged, err := root.StacksByTagsFilters([]string{filter})
 			if err != nil {
 				return nil, fmt.Errorf("invalid order entry %q: %w", entry, err)
 			}
-			for _, p := range paths {
-				if p.String() != self {
-					resolved[normalizeStackPath(p.String())] = struct{}{}
-				}
+			paths = paths[:0]
+			for _, p := range tagged {
+				paths = append(paths, p.String())
 			}
-			continue
+			if len(paths) == 0 {
+				continue
+			}
 		}
 
-		for _, tree := range root.StacksByPaths(stack.Dir, entry) {
+		for _, tree := range root.StacksByPaths(stack.Dir, paths...) {
 			if dir := tree.Dir().String(); dir != self {
 				resolved[normalizeStackPath(dir)] = struct{}{}
 			}

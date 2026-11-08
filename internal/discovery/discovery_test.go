@@ -224,6 +224,36 @@ func TestDiscoverResolvesOrderEntries(t *testing.T) {
 	}
 }
 
+// `terramate run` resolves a "tag:" entry to the matching stacks' dirs and
+// then, like any path entry, to every stack at or below them: a stack ordered
+// after "tag:network" also runs after the stacks nested in a network stack.
+func TestDiscoverTagOrderEntryIncludesNestedStacks(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "terramate.tm.hcl"), "terramate {}\n")
+	writeFile(t, filepath.Join(root, "net/vpc/stack.tm.hcl"), "stack {\n  tags = [\"network\"]\n}\n")
+	writeFile(t, filepath.Join(root, "net/vpc/subnet/stack.tm.hcl"), "stack {}\n")
+	writeFile(t, filepath.Join(root, "app/stack.tm.hcl"), "stack {\n  after = [\"tag:network\"]\n}\n")
+	writeFile(t, filepath.Join(root, "late/stack.tm.hcl"), "stack {\n  before = [\"tag:network\"]\n}\n")
+
+	result, err := Discover(DiscoverOptions{RootDir: root})
+	if err != nil {
+		t.Fatalf("discover failed: %v", err)
+	}
+	byDir := map[string]StackInfo{}
+	for _, s := range result.Stacks {
+		byDir[s.Dir] = s
+	}
+
+	if got := byDir["app"].AfterDirs; !equalStrings(got, []string{"net/vpc", "net/vpc/subnet"}) {
+		t.Errorf("app after tag:network: got %#v, want the tagged stack and the stack nested in it", got)
+	}
+	if got := byDir["late"].BeforeDirs; !equalStrings(got, []string{"net/vpc", "net/vpc/subnet"}) {
+		t.Errorf("late before tag:network: got %#v, want the tagged stack and the stack nested in it", got)
+	}
+}
+
 func TestDiscoverInvalidTagOrderEntry(t *testing.T) {
 	t.Parallel()
 
