@@ -1,0 +1,68 @@
+version: 3
+automerge: false
+parallel_plan: true
+parallel_apply: true
+projects:
+  - name: app-api
+    dir: stacks/app/api
+    execution_order_group: 3
+    depends_on:
+      - app-web
+      - data-rds
+      - network-dns
+    autoplan:
+      enabled: true
+      when_modified:
+        - '*.tf'
+        - '*.tf.json'
+        - .terraform.lock.hcl
+  - name: app-web
+    dir: stacks/app/web
+    autoplan:
+      enabled: true
+      when_modified:
+        - '*.tf'
+        - '*.tf.json'
+        - .terraform.lock.hcl
+  - name: data-rds
+    dir: stacks/data/rds
+    execution_order_group: 2
+    depends_on:
+      - network-dns
+      - network-vpc
+    autoplan:
+      enabled: true
+      when_modified:
+        - '*.tf'
+        - '*.tf.json'
+        - .terraform.lock.hcl
+  - name: network-dns
+    dir: stacks/network/dns
+    execution_order_group: 1
+    depends_on:
+      - network-vpc
+    autoplan:
+      enabled: true
+      when_modified:
+        - '*.tf'
+        - '*.tf.json'
+        - .terraform.lock.hcl
+  - name: network-vpc
+    dir: stacks/network/vpc
+    autoplan:
+      enabled: true
+      when_modified:
+        - '*.tf'
+        - '*.tf.json'
+        - .terraform.lock.hcl
+  - name: shared
+    dir: stacks/shared
+    execution_order_group: 3
+    depends_on:
+      - data-rds
+    autoplan:
+      enabled: true
+      when_modified:
+        - '*.tf'
+        - '*.tf.json'
+        - .terraform.lock.hcl
