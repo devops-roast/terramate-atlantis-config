@@ -359,3 +359,138 @@ func equalStrings(got, want []string) bool {
 
 	return true
 }
+
+func TestMatchesPathFilterDoubleStar(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		pattern, dir string
+		want         bool
+	}{
+		{"**/vpc", "vpc", true},
+		{"**/vpc", "infra/vpc", true},
+		{"**/vpc", "infra/eu/vpc", true},
+		{"**/vpc", "infra/vpc2", false},
+		{"a/**/b", "a/b", true},
+		{"a/**/b", "a/x/y/b", true},
+		{"a/**/b", "ab", false},
+		{"a/**/b", "a/xb", false},
+		{"a/**", "a", true},
+		{"a/**", "a/b/c", true},
+		{"**", "any/thing", true},
+		{"a/**b", "a/x/yb", true},
+	}
+
+	for _, tc := range cases {
+		got, err := matchesPathFilter(tc.pattern, tc.dir)
+		if err != nil {
+			t.Fatalf("matchesPathFilter(%q, %q): %v", tc.pattern, tc.dir, err)
+		}
+		if got != tc.want {
+			t.Errorf("matchesPathFilter(%q, %q) = %v, want %v", tc.pattern, tc.dir, got, tc.want)
+		}
+	}
+}
+
+func TestDiscoverEmptyWhenModifiedIsAnOverride(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "terramate.tm.hcl"), "terramate {}\n")
+	writeFile(t, filepath.Join(root, "empty/stack.tm.hcl"), `stack {}
+
+globals {
+  atlantis_when_modified      = []
+  atlantis_apply_requirements = []
+}
+`)
+	writeFile(t, filepath.Join(root, "unset/stack.tm.hcl"), "stack {}\n")
+
+	result, err := Discover(DiscoverOptions{RootDir: root})
+	if err != nil {
+		t.Fatalf("discover failed: %v", err)
+	}
+	if len(result.Stacks) != 2 {
+		t.Fatalf("expected 2 stacks, got %#v", result.Stacks)
+	}
+	if wm := result.Stacks[0].WhenModified; wm == nil || len(wm) != 0 {
+		t.Fatalf("atlantis_when_modified = [] must be kept as an empty override, got %#v", wm)
+	}
+	if wm := result.Stacks[1].WhenModified; wm != nil {
+		t.Fatalf("unset atlantis_when_modified must stay nil, got %#v", wm)
+	}
+	if ar := result.Stacks[0].ApplyRequirements; ar == nil || len(ar) != 0 {
+		t.Fatalf("atlantis_apply_requirements = [] must be kept as an empty override, got %#v", ar)
+	}
+	if ar := result.Stacks[1].ApplyRequirements; ar != nil {
+		t.Fatalf("unset atlantis_apply_requirements must stay nil, got %#v", ar)
+	}
+}
+
+func TestMatchesPathOrParent(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		pattern, dir string
+		want         bool
+	}{
+		{"infra", "infra", true},
+		{"infra", "infra/vpc", true},
+		{"infra", "infra/vpc/subnet", true},
+		{"infra", "infrastructure/vpc", false},
+		{"infra", "apps/infra", false},
+		{"infra/vpc", "infra", false},
+		{"infra/*", "infra", false},
+		{"infra/*", "infra/vpc/subnet", true},
+		{"*/vpc", "a/vpc/subnet", true},
+		{"**/vpc", "a/b/vpc/subnet", true},
+		{"infra/**", "infra", true},
+		{"/infra", "infra/vpc", true},
+		{"infra", ".", false},
+		{"**", ".", true},
+	}
+
+	for _, tc := range cases {
+		got, err := matchesPathOrParent(tc.pattern, tc.dir)
+		if err != nil {
+			t.Fatalf("matchesPathOrParent(%q, %q): %v", tc.pattern, tc.dir, err)
+		}
+		if got != tc.want {
+			t.Errorf("matchesPathOrParent(%q, %q) = %v, want %v", tc.pattern, tc.dir, got, tc.want)
+		}
+	}
+}
+
+func TestDiscoverPathFiltersIncludeNestedStacks(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "terramate.tm.hcl"), "terramate {}\n")
+	for _, dir := range []string{"infra", "infra/vpc", "infra/vpc/subnet", "infrastructure", "apps/web"} {
+		writeFile(t, filepath.Join(root, dir, "stack.tm.hcl"), "stack {}\n")
+	}
+
+	dirs := func(r Result) []string {
+		out := make([]string, 0, len(r.Stacks))
+		for _, s := range r.Stacks {
+			out = append(out, s.Dir)
+		}
+		return out
+	}
+
+	result, err := Discover(DiscoverOptions{RootDir: root, PathFilter: "infra"})
+	if err != nil {
+		t.Fatalf("discover failed: %v", err)
+	}
+	if got, want := dirs(result), []string{"infra", "infra/vpc", "infra/vpc/subnet"}; !equalStrings(got, want) {
+		t.Fatalf("--filter-path infra: got %v, want %v", got, want)
+	}
+
+	result, err = Discover(DiscoverOptions{RootDir: root, ExcludePath: "infra/vpc"})
+	if err != nil {
+		t.Fatalf("discover failed: %v", err)
+	}
+	if got, want := dirs(result), []string{"apps/web", "infra", "infrastructure"}; !equalStrings(got, want) {
+		t.Fatalf("--exclude-path infra/vpc: got %v, want %v", got, want)
+	}
+}

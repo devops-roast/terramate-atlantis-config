@@ -176,12 +176,14 @@ Logs go to stderr and never mix with the generated config on stdout.
 
 **Filtering**
 
-| Flag             | Default | Description                                  |
-| ---------------- | ------- | -------------------------------------------- |
-| `--filter`       |         | Include only stacks matching this tag filter |
-| `--filter-path`  |         | Include only stacks under this path          |
-| `--exclude-tags` |         | Exclude stacks with these tags               |
-| `--exclude-path` |         | Exclude stacks under this path               |
+| Flag             | Default | Description                                                       |
+| ---------------- | ------- | ----------------------------------------------------------------- |
+| `--filter`       |         | Include only stacks matching this tag filter                      |
+| `--filter-path`  |         | Include only stacks at or under directories matching this glob    |
+| `--exclude-tags` |         | Exclude stacks with these tags                                    |
+| `--exclude-path` |         | Exclude stacks at or under directories matching this glob         |
+
+Path filters are globs matched against each stack's directory and its parent directories, so a pattern selects everything nested under what it matches: `infra` selects `infra`, `infra/vpc` and `infra/vpc/subnet`, and `*/vpc` selects `prod/vpc` and `prod/vpc/subnet`. `*` matches within one path segment, and `**` matches any number of segments, including none (`**/vpc` also selects a top-level `vpc`).
 
 **Naming**
 
@@ -190,7 +192,7 @@ Logs go to stderr and never mix with the generated config on stdout.
 | `--create-project-name`   | `true`       | Generate a project name from the stack path                   |
 | `--project-name-strategy` | `auto-strip` | Naming strategy: `auto-strip`, `stack-name`, `last-n`, `full` |
 | `--project-name-prefix`   |              | Strip this prefix from stack paths when generating names      |
-| `--project-name-depth`    | `3`          | Number of trailing path segments for `last-n` strategy        |
+| `--project-name-depth`    | `3`          | Number of trailing path segments for `last-n` (at least 1)    |
 | `--create-workspace`      | `false`      | Set workspace from stack path                                 |
 | `--sort-by`               | `dir`        | Sort projects by `dir`, `name` or `execution_order_group`     |
 
@@ -247,6 +249,8 @@ Set Terramate globals in any stack to override defaults for that project.
 | `atlantis_when_modified`      | list(string) | Override when_modified patterns                       |
 | `atlantis_extra_deps`         | list(string) | Additional when_modified entries merged with defaults |
 | `atlantis_apply_requirements` | list(string) | Override apply requirements                           |
+
+`atlantis_when_modified = []` and `atlantis_apply_requirements = []` are explicit overrides, not "unset". `apply_requirements: []` is written to the project, which tells Atlantis to require nothing before apply, overriding the server-side requirements as well (when the server's `allowed_overrides` includes `apply_requirements`). Leave the global unset to fall back to tag requirements, `--apply-requirements`, and then the server-side defaults.
 
 ```hcl
 globals {

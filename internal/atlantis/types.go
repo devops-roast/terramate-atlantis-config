@@ -19,8 +19,11 @@ type Project struct {
 	TerraformVersion    string   `yaml:"terraform_version,omitempty" json:"terraform_version,omitempty"`
 	ExecutionOrderGroup int      `yaml:"execution_order_group,omitempty" json:"execution_order_group,omitempty"`
 	DependsOn           []string `yaml:"depends_on,omitempty" json:"depends_on,omitempty"`
-	ApplyRequirements   []string `yaml:"apply_requirements,omitempty" json:"apply_requirements,omitempty"`
-	Autoplan            Autoplan `yaml:"autoplan" json:"autoplan"`
+	// ApplyRequirements is a pointer so an explicit empty list is still
+	// written: Atlantis reads a missing key as "use the server-side
+	// requirements" but `apply_requirements: []` as "no requirements".
+	ApplyRequirements *[]string `yaml:"apply_requirements,omitempty" json:"apply_requirements,omitempty"`
+	Autoplan          Autoplan  `yaml:"autoplan" json:"autoplan"`
 }
 
 // Autoplan configures automatic planning behavior.

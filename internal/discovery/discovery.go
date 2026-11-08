@@ -54,7 +54,7 @@ type StackInfo struct {
 	TerraformVersion  string
 	ExtraDeps         []string // additional when_modified entries
 	WhenModified      []string // full override of when_modified (nil = use default)
-	ApplyRequirements []string
+	ApplyRequirements []string // nil = use default; empty = explicitly none
 }
 
 // Result is the outcome of a discovery run.
@@ -178,7 +178,7 @@ func Discover(opts DiscoverOptions) (Result, error) {
 
 		stackDir := normalizeStackPath(stack.Dir.String())
 		if opts.PathFilter != "" {
-			matched, err := matchesPathFilter(opts.PathFilter, stackDir)
+			matched, err := matchesPathOrParent(opts.PathFilter, stackDir)
 			if err != nil {
 				return Result{}, fmt.Errorf("matching path filter %q for stack %q: %w", opts.PathFilter, stackDir, err)
 			}
@@ -217,8 +217,8 @@ func Discover(opts DiscoverOptions) (Result, error) {
 			AutoplanEnabled:   overrides.AutoplanEnabled,
 			TerraformVersion:  overrides.TerraformVersion,
 			ExtraDeps:         append([]string(nil), overrides.ExtraDeps...),
-			WhenModified:      append([]string(nil), overrides.WhenModified...),
-			ApplyRequirements: append([]string(nil), overrides.ApplyRequirements...),
+			WhenModified:      cloneKeepingNil(overrides.WhenModified),
+			ApplyRequirements: cloneKeepingNil(overrides.ApplyRequirements),
 		})
 	}
 
@@ -230,7 +230,7 @@ func Discover(opts DiscoverOptions) (Result, error) {
 			}
 
 			if opts.ExcludePath != "" {
-				matched, err := matchesPathFilter(opts.ExcludePath, stack.Dir)
+				matched, err := matchesPathOrParent(opts.ExcludePath, stack.Dir)
 				if err != nil {
 					return Result{}, fmt.Errorf("matching exclude path filter %q for stack %q: %w", opts.ExcludePath, stack.Dir, err)
 				}
@@ -323,6 +323,16 @@ func normalizeStackPath(p string) string {
 	return normalized
 }
 
+// cloneKeepingNil copies s, keeping nil and empty distinct: for overrides
+// such as WhenModified and ApplyRequirements, nil means "use the default"
+// while an empty list is an explicit override.
+func cloneKeepingNil(s []string) []string {
+	if s == nil {
+		return nil
+	}
+	return append([]string{}, s...)
+}
+
 func intersectAllowedPaths(current, incoming map[string]struct{}) map[string]struct{} {
 	if current == nil {
 		return incoming
@@ -338,6 +348,27 @@ func intersectAllowedPaths(current, incoming map[string]struct{}) map[string]str
 	return intersection
 }
 
+// matchesPathOrParent reports whether pattern matches stackDir or any of its
+// parent directories, so a pattern selects the stacks at or under every
+// directory it matches: "infra" selects infra and infra/vpc, "*/vpc" selects
+// a/vpc and a/vpc/subnet. This mirrors how a directory scopes stacks in
+// Terramate (`terramate run` in a directory includes its nested stacks).
+func matchesPathOrParent(pattern, stackDir string) (bool, error) {
+	dir := filepath.ToSlash(strings.TrimPrefix(stackDir, "/"))
+	for {
+		matched, err := matchesPathFilter(pattern, dir)
+		if err != nil || matched {
+			return matched, err
+		}
+		parent := path.Dir(dir)
+		if parent == dir || parent == "." || parent == "/" {
+			return false, nil
+		}
+		dir = parent
+	}
+}
+
+// matchesPathFilter reports whether pattern matches stackDir itself.
 func matchesPathFilter(pattern, stackDir string) (bool, error) {
 	normalizedPattern := filepath.ToSlash(strings.TrimPrefix(pattern, "/"))
 	if normalizedPattern == "" {
@@ -373,8 +404,15 @@ func globToRegexp(glob string) string {
 		switch ch {
 		case '*':
 			if i+1 < len(glob) && glob[i+1] == '*' {
-				b.WriteString(".*")
 				i++
+				if i+1 < len(glob) && glob[i+1] == '/' {
+					// "**/" matches zero or more whole directories, so
+					// "**/vpc" matches "vpc" and "a/**/b" matches "a/b".
+					b.WriteString("(?:.*/)?")
+					i++
+				} else {
+					b.WriteString(".*")
+				}
 			} else {
 				b.WriteString("[^/]*")
 			}

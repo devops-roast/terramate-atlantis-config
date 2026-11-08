@@ -48,7 +48,29 @@ func TestValidateConfig(t *testing.T) {
 					{Dir: "stacks/app", Workspace: "default"},
 				},
 			},
-			want: []string{"duplicate project dir: stacks/app (workspace default)"},
+			want: []string{"duplicate project dir: stacks/app (workspace default); projects sharing a dir and workspace must all have a name"},
+		},
+		{
+			name: "same dir and workspace is allowed when every project is named",
+			cfg: atlantis.Config{
+				Version: 3,
+				Projects: []atlantis.Project{
+					{Name: "app-staging", Dir: "stacks/app", Workflow: "staging"},
+					{Name: "app-prod", Dir: "stacks/app", Workflow: "prod"},
+				},
+			},
+			want: []string{},
+		},
+		{
+			name: "same dir and workspace with one unnamed project",
+			cfg: atlantis.Config{
+				Version: 3,
+				Projects: []atlantis.Project{
+					{Dir: "stacks/app"},
+					{Name: "app-prod", Dir: "stacks/app"},
+				},
+			},
+			want: []string{"duplicate project dir: stacks/app (workspace default); projects sharing a dir and workspace must all have a name"},
 		},
 		{
 			name: "depends_on with dir instead of project name",

@@ -114,17 +114,22 @@ func Generate(stacks []discovery.StackInfo, opts Options) (Config, error) {
 		}
 
 		if stack.WhenModified != nil {
-			project.Autoplan.WhenModified = append([]string(nil), stack.WhenModified...)
+			// Non-nil even when empty: JSON would render nil as null, which
+			// Atlantis reads as "use its default patterns".
+			project.Autoplan.WhenModified = append([]string{}, stack.WhenModified...)
 		} else {
 			project.Autoplan.WhenModified = mergeWhenModified(opts.WhenModified, stack.ExtraDeps)
 		}
 
-		if len(stack.ApplyRequirements) > 0 {
-			project.ApplyRequirements = append([]string(nil), stack.ApplyRequirements...)
+		// A stack's atlantis_apply_requirements wins even when empty: `[]`
+		// is an explicit "no requirements". An empty default is omitted so
+		// Atlantis falls back to the server-side requirements.
+		if stack.ApplyRequirements != nil {
+			project.ApplyRequirements = copyToPtr(stack.ApplyRequirements)
 		} else if requirements, ok := requirementsFromTags(stack.Tags, opts.TagRequirements); ok {
-			project.ApplyRequirements = append([]string(nil), requirements...)
+			project.ApplyRequirements = copyToPtr(requirements)
 		} else if len(opts.ApplyRequirements) > 0 {
-			project.ApplyRequirements = append([]string(nil), opts.ApplyRequirements...)
+			project.ApplyRequirements = copyToPtr(opts.ApplyRequirements)
 		}
 
 		projects = append(projects, project)
@@ -233,6 +238,12 @@ func MarshalYAML(cfg Config, addHeader bool) ([]byte, error) {
 
 func MarshalJSON(cfg Config) ([]byte, error) {
 	return json.MarshalIndent(cfg, "", "  ")
+}
+
+// copyToPtr returns a pointer to a non-nil copy of s.
+func copyToPtr(s []string) *[]string {
+	c := append([]string{}, s...)
+	return &c
 }
 
 func mergeWhenModified(defaults, extraDeps []string) []string {
