@@ -294,7 +294,7 @@ Project names are derived from stack paths. Four strategies control the format:
 | `full`       | Full path, no stripping                                          | `stacks-aws-prod-eu-west-1-db-billing`           |
 
 - **Names are stable.** They are always computed against every stack in the repository (except those with `atlantis_skip`), so `--changed`, `--filter`, `--filter-path` and `--exclude-*` never rename a project.
-- **Names are unique.** If two stacks would produce the same name, the tool adds parent segments until they differ, and falls back to the full path (then a numeric suffix) as a last resort.
+- **Names are unique.** If two stacks would produce the same name, the tool adds parent segments to the name the strategy produced until they differ, and falls back to the full path (then a numeric suffix) as a last resort.
 - **Names are valid.** Characters Atlantis rejects in project names (anything that isn't URL safe, such as spaces) are replaced with `-`.
 - `--project-name-prefix` only strips whole path segments: `stacks/aws/prod` strips `stacks/aws/prod/vpc` but not `stacks/aws/production/vpc`.
 - A stack at the repository root gets `dir: .` and the name `root` (with `stack-name`, its `name` field, if set).
