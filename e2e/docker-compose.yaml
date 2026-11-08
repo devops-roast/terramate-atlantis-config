@@ -10,6 +10,10 @@ services:
       - GITEA__database__DB_TYPE=sqlite3
       # Server
       - GITEA__server__ROOT_URL=http://gitea:3000
+      # Always use ROOT_URL in webhook payloads. Gitea >= 28 defaults to "auto",
+      # which derives clone URLs from the request Host (localhost:3000 when the
+      # test opens PRs from the host), and Atlantis cannot clone from that.
+      - GITEA__server__PUBLIC_URL_DETECTION=never
       - GITEA__server__HTTP_PORT=3000
       - GITEA__server__DOMAIN=gitea
       - GITEA__server__DISABLE_SSH=true
@@ -18,8 +22,12 @@ services:
       # Disable public registration — users are created via CLI
       - GITEA__service__DISABLE_REGISTRATION=true
       - GITEA__service__REQUIRE_SIGNIN_VIEW=false
-      # Allow webhooks to reach containers on the Docker network
-      - GITEA__webhook__ALLOWED_HOST_LIST=*
+      # Allow webhooks to reach Atlantis on the Docker network. Gitea >= 28
+      # only lets outbound requests reach private addresses through an IP
+      # allow entry (a CIDR or the "private" range), and a portless entry only
+      # covers default ports, so name Atlantis's port explicitly.
+      - GITEA__security__EGRESS_MODE=lax
+      - GITEA__security__ALLOWED_HOST_LIST=private:4141
       - GITEA__webhook__SKIP_TLS_VERIFY=true
     ports:
       - "${GITEA_HOST_PORT:-3000}:3000"
