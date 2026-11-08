@@ -1,8 +1,11 @@
 - id: terramate-atlantis-config
   name: terramate-atlantis-config
   description: Generate atlantis.yaml from Terramate stacks
-  entry: terramate-atlantis-config generate
+  # Writes atlantis.yaml at the repository root. Pass `args: [--output, path]`
+  # to write elsewhere (the last --output wins).
+  entry: terramate-atlantis-config generate --output atlantis.yaml
   language: golang
   pass_filenames: false
+  # Runs on every commit: a stack can change through files of any type, and
+  # deleting a stack leaves no staged file for a file filter to match.
   always_run: true
-  types_or: [hcl, terraform]
