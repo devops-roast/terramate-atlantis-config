@@ -157,6 +157,11 @@ func checkKnownKeys(root *yaml.Node) error {
 		return nil
 	}
 	mapping := root.Content[0]
+	// A document with no content ("---" with every key commented out) is
+	// an empty config, like an empty file.
+	if mapping.Kind == yaml.ScalarNode && mapping.Tag == "!!null" {
+		return nil
+	}
 	if mapping.Kind != yaml.MappingNode {
 		return fmt.Errorf("line %d: expected a mapping of config keys", mapping.Line)
 	}
