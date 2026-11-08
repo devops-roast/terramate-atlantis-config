@@ -384,8 +384,10 @@ func compareWithExisting(stdout, stderr io.Writer, opts *GenerateOptions, genera
 		if missing {
 			state = "does not exist"
 		}
-		fmt.Fprintf(stderr, "%s %s, run 'terramate-atlantis-config generate --output %s' to update\n",
-			opts.Output, state, opts.Output)
+		// The other flags (--root, --format, filters, ...) shape the output
+		// too, so point at the same command rather than a fixed one.
+		fmt.Fprintf(stderr, "%s %s, run the same command without --check and --diff to update it\n",
+			opts.Output, state)
 	}
 
 	return &ExitError{Code: 1}

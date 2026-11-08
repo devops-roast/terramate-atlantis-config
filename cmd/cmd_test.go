@@ -148,7 +148,7 @@ func TestCheck(t *testing.T) {
 
 		assert.Equal(t, 1, res.code)
 		assert.Empty(t, res.stdout)
-		assert.Equal(t, out+" is out of date, run 'terramate-atlantis-config generate --output "+out+"' to update\n", res.stderr)
+		assert.Equal(t, out+" is out of date, run the same command without --check and --diff to update it\n", res.stderr)
 		assert.NotContains(t, res.stderr, "Error:")
 		assert.NotContains(t, res.stderr, "Usage:")
 	})
@@ -159,7 +159,7 @@ func TestCheck(t *testing.T) {
 		res := generateTo(t, root, out, "--check")
 
 		assert.Equal(t, 1, res.code)
-		assert.Equal(t, out+" does not exist, run 'terramate-atlantis-config generate --output "+out+"' to update\n", res.stderr)
+		assert.Equal(t, out+" does not exist, run the same command without --check and --diff to update it\n", res.stderr)
 		assert.NoFileExists(t, out, "--check must not write the output file")
 	})
 
