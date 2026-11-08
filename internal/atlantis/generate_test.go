@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/devops-roast/terramate-atlantis-config/internal/discovery"
 )
 
@@ -1243,4 +1245,38 @@ func TestDependenciesFollowedThroughExcludedStacks(t *testing.T) {
 	skipped := append([]discovery.StackInfo(nil), all...)
 	skipped[1].Skip, skipped[2].Skip = true, true
 	check("skipped", mustGenerate(t, skipped, opts))
+}
+
+// A literal block line ending in whitespace would be stripped by trailing
+// whitespace fixers, changing the command and failing --check.
+func TestMarshalYAMLHasNoTrailingWhitespace(t *testing.T) {
+	t.Parallel()
+
+	cfg := mustGenerate(t, []discovery.StackInfo{{Dir: "a"}}, Options{CreateProjectName: true})
+	cfg.Workflows = map[string]interface{}{"wf": map[string]interface{}{"plan": map[string]interface{}{"steps": []interface{}{
+		map[string]interface{}{"run": "echo a\t\necho b"},
+		map[string]interface{}{"run": "echo c \necho d\n"},
+		map[string]interface{}{"run": "echo e\necho f\n"},
+	}}}}
+
+	out, err := MarshalYAML(cfg, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, line := range strings.Split(string(out), "\n") {
+		if strings.TrimRight(line, " \t") != line {
+			t.Errorf("line %d has trailing whitespace: %q", i+1, line)
+		}
+	}
+
+	var back Config
+	if err := yaml.Unmarshal(out, &back); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(back.Workflows, cfg.Workflows) {
+		t.Fatalf("round trip changed workflows:\n%#v\n%#v", back.Workflows, cfg.Workflows)
+	}
+	if !strings.Contains(string(out), "- run: |\n") {
+		t.Errorf("multi-line strings without trailing whitespace keep the literal style:\n%s", out)
+	}
 }
