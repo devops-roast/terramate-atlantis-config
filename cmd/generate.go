@@ -37,21 +37,27 @@ type GenerateOptions struct {
 	PreserveWorkflows     bool
 	GenerateWorkflows     bool
 	WorkflowTerramateWrap bool
-	Diff                  bool
-	Check                 bool
-	SortBy                string
-	NoHeader              bool
-	Format                string
-	ExecutionOrderGroups  bool
-	DependsOn             bool
-	ProjectNameStrategy   string
-	ProjectNamePrefix     string
-	ProjectNameDepth      int
-	WhenModified          []string
-	ApplyRequirements     []string
-	TagWorkflow           []string
-	TagRequirements       []string
-	ConfigWorkflows       map[string]interface{}
+	// WorkflowDisableSafeguards is passed to `terramate run --disable-safeguards`
+	// in generated workflows.
+	WorkflowDisableSafeguards []string
+	// LogLevel comes from the config file only; the --log-level flag is
+	// handled by the root command.
+	LogLevel             string
+	Diff                 bool
+	Check                bool
+	SortBy               string
+	NoHeader             bool
+	Format               string
+	ExecutionOrderGroups bool
+	DependsOn            bool
+	ProjectNameStrategy  string
+	ProjectNamePrefix    string
+	ProjectNameDepth     int
+	WhenModified         []string
+	ApplyRequirements    []string
+	TagWorkflow          []string
+	TagRequirements      []string
+	ConfigWorkflows      map[string]interface{}
 }
 
 const stdoutOutput = "-"
@@ -101,7 +107,9 @@ supported via Terramate globals (atlantis_skip, atlantis_workflow, etc).`,
 	flags.BoolVar(&opts.CreateWorkspace, "create-workspace", false, "Generate workspace values from stack paths")
 	flags.BoolVar(&opts.PreserveWorkflows, "preserve-workflows", false, "Preserve workflows from an existing output file")
 	flags.BoolVar(&opts.GenerateWorkflows, "generate-workflows", false, "Generate default Atlantis workflows that run via terramate")
-	flags.BoolVar(&opts.WorkflowTerramateWrap, "workflow-terramate-wrap", true, "Wrap generated workflow terraform commands with terramate run --")
+	flags.BoolVar(&opts.WorkflowTerramateWrap, "workflow-terramate-wrap", true, "Wrap generated workflow terraform commands with terramate run --no-recursive --")
+	flags.StringSliceVar(&opts.WorkflowDisableSafeguards, "workflow-disable-safeguards", atlantis.DefaultDisableSafeguards,
+		"Terramate safeguards disabled in generated workflows (comma-separated: "+strings.Join(atlantis.ValidSafeguardKeywords, ", ")+"); pass an empty value to keep all safeguards")
 	flags.BoolVar(&opts.Diff, "diff", false, "Print a unified diff between the existing output file and generated content; exits 1 on changes")
 	flags.BoolVar(&opts.Check, "check", false, "Exit 1 if the output file differs from generated content; combine with --diff to show the changes")
 	flags.StringVar(&opts.SortBy, "sort-by", "dir", "Project sort order: "+strings.Join(validSortBy, ", "))
@@ -132,6 +140,9 @@ func validateGenerateOptions(opts *GenerateOptions) error {
 	if !contains(validNameStrategies, opts.ProjectNameStrategy) {
 		return fmt.Errorf("invalid project-name-strategy %q, expected one of: %s",
 			opts.ProjectNameStrategy, strings.Join(validNameStrategies, ", "))
+	}
+	if err := atlantis.ValidateSafeguards(opts.WorkflowDisableSafeguards); err != nil {
+		return fmt.Errorf("--workflow-disable-safeguards: %w", err)
 	}
 	if (opts.Check || opts.Diff) && writesToStdout(opts.Output) {
 		return fmt.Errorf("--check and --diff require an output file (set --output or 'output' in the config file)")
@@ -169,6 +180,21 @@ func runGenerate(cmd *cobra.Command, opts *GenerateOptions) error {
 		return err
 	}
 
+	if opts.LogLevel != "" {
+		if err := configureLogging(stderr, opts.LogLevel); err != nil {
+			return fmt.Errorf("config file log_level: %w", err)
+		}
+	}
+
+	warnf := func(format string, args ...any) {
+		fmt.Fprintf(stderr, "Warning: "+format+"\n", args...)
+	}
+
+	defaultWorkflow := opts.Workflow
+	if defaultWorkflow == "" && opts.GenerateWorkflows {
+		defaultWorkflow = atlantis.GeneratedWorkflowName
+	}
+
 	tagWorkflows, err := parseTagWorkflows(opts.TagWorkflow)
 	if err != nil {
 		return err
@@ -196,7 +222,7 @@ func runGenerate(cmd *cobra.Command, opts *GenerateOptions) error {
 		Autoplan:             opts.Autoplan,
 		Parallel:             opts.Parallel,
 		Automerge:            opts.Automerge,
-		DefaultWorkflow:      opts.Workflow,
+		DefaultWorkflow:      defaultWorkflow,
 		TerraformVersion:     opts.TerraformVersion,
 		CreateProjectName:    opts.CreateProjectName,
 		CreateWorkspace:      opts.CreateWorkspace,
@@ -211,44 +237,17 @@ func runGenerate(cmd *cobra.Command, opts *GenerateOptions) error {
 		ProjectNamePrefix:    opts.ProjectNamePrefix,
 		ProjectNameDepth:     opts.ProjectNameDepth,
 		NamingStacks:         discovered.AllStacks,
-		Warnf: func(format string, args ...any) {
-			fmt.Fprintf(stderr, "Warning: "+format+"\n", args...)
-		},
+		Warnf:                warnf,
 	})
 	if err != nil {
 		return err
 	}
 
-	if len(opts.ConfigWorkflows) > 0 {
-		cfg.Workflows = make(map[string]interface{}, len(opts.ConfigWorkflows))
-		for name, workflow := range opts.ConfigWorkflows {
-			cfg.Workflows[name] = workflow
-		}
+	workflows, err := buildWorkflows(opts, warnf)
+	if err != nil {
+		return err
 	}
-
-	generatedWorkflows := atlantis.GenerateWorkflows(atlantis.WorkflowOptions{
-		Enabled:           opts.GenerateWorkflows,
-		WrapWithTerramate: opts.WorkflowTerramateWrap,
-	})
-	if len(generatedWorkflows) > 0 {
-		if cfg.Workflows == nil {
-			cfg.Workflows = make(map[string]interface{}, len(generatedWorkflows))
-		}
-		for name, workflow := range generatedWorkflows {
-			cfg.Workflows[name] = workflow
-		}
-	}
-
-	if opts.PreserveWorkflows && !writesToStdout(opts.Output) {
-		existing, readErr := os.ReadFile(opts.Output)
-		if readErr == nil {
-			if err := atlantis.PreserveWorkflows(existing, &cfg); err != nil {
-				return fmt.Errorf("preserving workflows: %w", err)
-			}
-		} else if !os.IsNotExist(readErr) {
-			return fmt.Errorf("reading existing output file: %w", readErr)
-		}
-	}
+	cfg.Workflows = workflows
 
 	var output []byte
 	switch opts.Format {
@@ -276,6 +275,50 @@ func runGenerate(cmd *cobra.Command, opts *GenerateOptions) error {
 
 	fmt.Fprintf(stderr, "Generated %s with %d projects\n", opts.Output, len(cfg.Projects))
 	return nil
+}
+
+// buildWorkflows merges workflow definitions by name, from lowest to highest
+// precedence: workflows preserved from the existing output file, then
+// generated workflows, then workflows defined in the config file. Generated
+// workflows replace stale preserved copies of themselves; hand-written config
+// workflows are the most explicit intent, so they can override a generated
+// workflow by reusing its name.
+func buildWorkflows(opts *GenerateOptions, warnf func(string, ...any)) (map[string]interface{}, error) {
+	var preserved map[string]interface{}
+	if opts.PreserveWorkflows && !writesToStdout(opts.Output) {
+		existing, readErr := os.ReadFile(opts.Output)
+		switch {
+		case readErr == nil:
+			var err error
+			preserved, err = atlantis.ExistingWorkflows(existing)
+			if err != nil {
+				return nil, fmt.Errorf("preserving workflows from %s: %w", opts.Output, err)
+			}
+		case !os.IsNotExist(readErr):
+			return nil, fmt.Errorf("reading existing output file: %w", readErr)
+		}
+	}
+
+	generated := atlantis.GenerateWorkflows(atlantis.WorkflowOptions{
+		Enabled:           opts.GenerateWorkflows,
+		WrapWithTerramate: opts.WorkflowTerramateWrap,
+		DisableSafeguards: opts.WorkflowDisableSafeguards,
+	})
+
+	merged, overrides := atlantis.MergeWorkflows(
+		atlantis.WorkflowLayer{Source: atlantis.SourcePreserved, Workflows: preserved},
+		atlantis.WorkflowLayer{Source: atlantis.SourceGenerated, Workflows: generated},
+		atlantis.WorkflowLayer{Source: atlantis.SourceConfig, Workflows: opts.ConfigWorkflows},
+	)
+	for _, o := range overrides {
+		// Regenerating replaces the previously generated copy; that is the
+		// expected path and not worth a warning.
+		if o.Winner == atlantis.SourceGenerated && o.Replaced == atlantis.SourcePreserved {
+			continue
+		}
+		warnf("workflow %q from the %s overrides the one from the %s", o.Name, o.Winner, o.Replaced)
+	}
+	return merged, nil
 }
 
 // compareWithExisting implements --check and --diff. --diff prints a unified
@@ -407,8 +450,33 @@ func mergeConfig(cmd *cobra.Command, opts *GenerateOptions, cfg *internalconfig.
 
 		opts.TagRequirements = make([]string, 0, len(tags))
 		for _, tag := range tags {
-			opts.TagRequirements = append(opts.TagRequirements, fmt.Sprintf("%s=%s", tag, cfg.TagRequirements[tag]))
+			opts.TagRequirements = append(opts.TagRequirements,
+				fmt.Sprintf("%s=%s", tag, strings.Join(cfg.TagRequirements[tag], ",")))
 		}
+	}
+	if !cmd.Flags().Changed("changed") && cfg.Changed != nil {
+		opts.Changed = *cfg.Changed
+	}
+	if !cmd.Flags().Changed("changed-base-ref") && cfg.ChangedBaseRef != "" {
+		opts.ChangedBaseRef = cfg.ChangedBaseRef
+	}
+	if !cmd.Flags().Changed("preserve-workflows") && cfg.PreserveWorkflows != nil {
+		opts.PreserveWorkflows = *cfg.PreserveWorkflows
+	}
+	if !cmd.Flags().Changed("generate-workflows") && cfg.GenerateWorkflows != nil {
+		opts.GenerateWorkflows = *cfg.GenerateWorkflows
+	}
+	if !cmd.Flags().Changed("workflow-terramate-wrap") && cfg.WorkflowTerramateWrap != nil {
+		opts.WorkflowTerramateWrap = *cfg.WorkflowTerramateWrap
+	}
+	if !cmd.Flags().Changed("workflow-disable-safeguards") && cfg.WorkflowDisableSafeguards != nil {
+		opts.WorkflowDisableSafeguards = append([]string{}, (*cfg.WorkflowDisableSafeguards)...)
+	}
+	if !cmd.Flags().Changed("no-header") && cfg.NoHeader != nil {
+		opts.NoHeader = *cfg.NoHeader
+	}
+	if !cmd.Flags().Changed("log-level") && cfg.LogLevel != "" {
+		opts.LogLevel = cfg.LogLevel
 	}
 	if !cmd.Flags().Changed("sort-by") && cfg.SortBy != "" {
 		opts.SortBy = cfg.SortBy

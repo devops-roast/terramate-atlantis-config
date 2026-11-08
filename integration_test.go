@@ -67,6 +67,32 @@ func TestIntegration(t *testing.T) {
 	}
 }
 
+// TestCLIConfigFileGolden drives the binary purely from a config file that
+// uses the flag-equivalent keys (generate_workflows, tag_requirements lists,
+// workflow_disable_safeguards, ...) and compares against a golden file.
+func TestCLIConfigFileGolden(t *testing.T) {
+	const fixture = "testdata/config_workflows"
+	dir := copyFixture(t, fixture)
+	initGitRepo(t, dir)
+
+	res := runCLI(t, dir, "generate")
+	require.Equal(t, 0, res.exitCode, res.stderr)
+	require.Empty(t, res.stderr)
+
+	expectedPath, err := filepath.Abs(filepath.Join(fixture, "expected.yaml"))
+	require.NoError(t, err)
+	if *update {
+		require.NoError(t, os.WriteFile(expectedPath, []byte(res.stdout), 0o644))
+	}
+	expected, err := os.ReadFile(expectedPath)
+	require.NoError(t, err)
+	require.Equal(t, string(expected), res.stdout)
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "atlantis.yaml"), []byte(res.stdout), 0o644))
+	validate := runCLI(t, dir, "validate", "atlantis.yaml")
+	require.Equal(t, 0, validate.exitCode, validate.stderr)
+}
+
 // --- CLI tests: run the real binary against fixture repositories ---
 
 var (

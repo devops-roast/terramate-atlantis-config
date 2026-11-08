@@ -1,6 +1,26 @@
 package atlantis
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
+
+// GeneratedWorkflowName is the name of the workflow emitted by
+// --generate-workflows.
+const GeneratedWorkflowName = "terramate"
+
+// DefaultDisableSafeguards is the set of Terramate safeguards the generated
+// workflow disables by default. Inside Atlantis the git safeguards cannot
+// pass: the pre-workflow hook writes atlantis.yaml (untracked or modified),
+// terraform init and plan create lock and plan files, and Atlantis clones
+// do not track the default branch the way a developer checkout does.
+var DefaultDisableSafeguards = []string{"git"}
+
+// ValidSafeguardKeywords are the keywords accepted by
+// `terramate run --disable-safeguards`.
+var ValidSafeguardKeywords = []string{
+	"all", "none", "git", "git-untracked", "git-uncommitted", "git-out-of-sync", "outdated-code",
+}
 
 type WorkflowTemplate struct {
 	Name       string
@@ -17,10 +37,31 @@ type Step struct {
 type WorkflowOptions struct {
 	Enabled           bool
 	WrapWithTerramate bool
+	// DisableSafeguards is passed to `terramate run --disable-safeguards`.
+	// Empty keeps all Terramate safeguards enabled.
+	DisableSafeguards []string
 	PlanExtraArgs     []string
 	ApplyExtraArgs    []string
 	InitExtraArgs     []string
 	CustomWorkflows   map[string]WorkflowTemplate
+}
+
+// ValidateSafeguards checks keywords against the ones Terramate accepts.
+func ValidateSafeguards(keywords []string) error {
+	for _, keyword := range keywords {
+		valid := false
+		for _, known := range ValidSafeguardKeywords {
+			if keyword == known {
+				valid = true
+				break
+			}
+		}
+		if !valid {
+			return fmt.Errorf("invalid safeguard keyword %q, expected one of: %s",
+				keyword, strings.Join(ValidSafeguardKeywords, ", "))
+		}
+	}
+	return nil
 }
 
 func GenerateWorkflows(opts WorkflowOptions) map[string]interface{} {
@@ -31,16 +72,19 @@ func GenerateWorkflows(opts WorkflowOptions) map[string]interface{} {
 	workflows := map[string]interface{}{}
 
 	if opts.Enabled {
-		workflows["terramate"] = map[string]interface{}{
+		cmd := func(action string, args ...string) string {
+			return terraformCommand(action, opts.WrapWithTerramate, opts.DisableSafeguards, args...)
+		}
+		workflows[GeneratedWorkflowName] = map[string]interface{}{
 			"plan": map[string]interface{}{
 				"steps": []interface{}{
-					map[string]interface{}{"run": terraformCommand("init", opts.WrapWithTerramate, append([]string{"-input=false"}, opts.InitExtraArgs...)...)},
-					map[string]interface{}{"run": terraformCommand("plan", opts.WrapWithTerramate, append([]string{"-input=false", "-out=$PLANFILE"}, opts.PlanExtraArgs...)...)},
+					map[string]interface{}{"run": cmd("init", append([]string{"-input=false"}, opts.InitExtraArgs...)...)},
+					map[string]interface{}{"run": cmd("plan", append([]string{"-input=false", "-out=$PLANFILE"}, opts.PlanExtraArgs...)...)},
 				},
 			},
 			"apply": map[string]interface{}{
 				"steps": []interface{}{
-					map[string]interface{}{"run": terraformCommand("apply", opts.WrapWithTerramate, append([]string{"$PLANFILE"}, opts.ApplyExtraArgs...)...)},
+					map[string]interface{}{"run": cmd("apply", append([]string{"$PLANFILE"}, opts.ApplyExtraArgs...)...)},
 				},
 			},
 		}
@@ -90,10 +134,17 @@ func renderWorkflowSteps(steps []Step) []interface{} {
 	return rendered
 }
 
-func terraformCommand(action string, wrap bool, args ...string) string {
+// terraformCommand renders a terraform invocation. When wrapped, it runs via
+// `terramate run --no-recursive` so only the project's own stack executes:
+// nested child stacks are separate Atlantis projects.
+func terraformCommand(action string, wrap bool, disableSafeguards []string, args ...string) string {
 	parts := []string{}
 	if wrap {
-		parts = append(parts, "terramate", "run", "--")
+		parts = append(parts, "terramate", "run", "--no-recursive")
+		if len(disableSafeguards) > 0 {
+			parts = append(parts, "--disable-safeguards="+strings.Join(disableSafeguards, ","))
+		}
+		parts = append(parts, "--")
 	}
 	parts = append(parts, "terraform", action)
 	parts = append(parts, args...)

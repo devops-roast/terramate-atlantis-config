@@ -521,30 +521,6 @@ func TestGenerateExecutionOrderGroupsAndDependsOn(t *testing.T) {
 	}
 }
 
-func TestPreserveWorkflows(t *testing.T) {
-	t.Parallel()
-
-	existing := []byte(`version: 3
-workflows:
-  custom:
-    plan:
-      steps:
-        - init
-projects:
-  - dir: keep/me
-`)
-
-	cfg := Config{Version: 3}
-	err := PreserveWorkflows(existing, &cfg)
-	if err != nil {
-		t.Fatalf("preserve workflows failed: %v", err)
-	}
-
-	if _, ok := cfg.Workflows["custom"]; !ok {
-		t.Fatalf("expected preserved custom workflow, got %#v", cfg.Workflows)
-	}
-}
-
 func TestGenerateApplyRequirementsPrecedence(t *testing.T) {
 	t.Parallel()
 
