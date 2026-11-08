@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
@@ -62,6 +64,10 @@ func validateConfig(cfg atlantis.Config) []string {
 	for i, project := range cfg.Projects {
 		if project.Dir == "" {
 			issues = append(issues, fmt.Sprintf("projects[%d]: dir is required", i))
+		} else if hasDotDotSegment(project.Dir) {
+			// Atlantis rejects dirs containing "..": a project must stay
+			// inside the repository.
+			issues = append(issues, fmt.Sprintf("projects[%d]: dir %q must not contain '..'", i, project.Dir))
 		} else {
 			workspace := project.Workspace
 			if workspace == "" {
@@ -132,6 +138,15 @@ func workflowWarnings(cfg atlantis.Config) []string {
 		}
 	}
 	return warnings
+}
+
+func hasDotDotSegment(dir string) bool {
+	for _, segment := range strings.Split(filepath.ToSlash(dir), "/") {
+		if segment == ".." {
+			return true
+		}
+	}
+	return false
 }
 
 func projectRef(project atlantis.Project) string {

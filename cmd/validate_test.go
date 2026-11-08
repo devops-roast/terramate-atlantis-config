@@ -28,6 +28,21 @@ func TestValidateConfig(t *testing.T) {
 			want: []string{},
 		},
 		{
+			name: "dirs outside the repository",
+			cfg: atlantis.Config{
+				Version: 3,
+				Projects: []atlantis.Project{
+					{Dir: "../a"},
+					{Dir: "a/../../b"},
+					{Dir: "a..b"},
+				},
+			},
+			want: []string{
+				`projects[0]: dir "../a" must not contain '..'`,
+				`projects[1]: dir "a/../../b" must not contain '..'`,
+			},
+		},
+		{
 			name: "dirs that differ only in spelling are the same dir",
 			cfg: atlantis.Config{
 				Version: 3,
