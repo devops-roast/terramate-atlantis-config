@@ -451,10 +451,12 @@ func mergeConfig(cmd *cobra.Command, opts *GenerateOptions, cfg *internalconfig.
 	if !cmd.Flags().Changed("depends-on") && cfg.DependsOn != nil {
 		opts.DependsOn = *cfg.DependsOn
 	}
-	if !cmd.Flags().Changed("when-modified") && len(cfg.WhenModified) > 0 {
+	// Lists are copied when set, even if empty: `when_modified: []` is an
+	// explicit value, like --when-modified=.
+	if !cmd.Flags().Changed("when-modified") && cfg.WhenModified != nil {
 		opts.WhenModified = append([]string(nil), cfg.WhenModified...)
 	}
-	if !cmd.Flags().Changed("apply-requirements") && len(cfg.ApplyRequirements) > 0 {
+	if !cmd.Flags().Changed("apply-requirements") && cfg.ApplyRequirements != nil {
 		opts.ApplyRequirements = append([]string(nil), cfg.ApplyRequirements...)
 	}
 	if !cmd.Flags().Changed("tag-workflow") && len(cfg.TagWorkflows) > 0 {

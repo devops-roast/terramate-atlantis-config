@@ -455,3 +455,21 @@ func TestListFlagsAreTrimmed(t *testing.T) {
 	require.Equal(t, 0, res.code, res.stderr)
 	assert.Equal(t, []string{}, parsed(t, res.stdout).Projects[0].Autoplan.WhenModified)
 }
+
+// `when_modified: []` in the config file is an explicit empty list, the same
+// as --when-modified=, not "unset".
+func TestConfigEmptyWhenModifiedIsHonored(t *testing.T) {
+	root := newFixture(t)
+	writeFile(t, filepath.Join(root, ".terramate-atlantis.yaml"), "when_modified: []\nno_header: true\n")
+
+	res := run(t, "generate", "--root", root)
+
+	require.Equal(t, 0, res.code, res.stderr)
+	assert.Equal(t, []string{}, parsed(t, res.stdout).Projects[0].Autoplan.WhenModified)
+
+	// An unset key keeps the default patterns.
+	writeFile(t, filepath.Join(root, ".terramate-atlantis.yaml"), "when_modified:\nno_header: true\n")
+	res = run(t, "generate", "--root", root)
+	require.Equal(t, 0, res.code, res.stderr)
+	assert.Equal(t, []string{"*.tf", "*.tf.json", ".terraform.lock.hcl"}, parsed(t, res.stdout).Projects[0].Autoplan.WhenModified)
+}
