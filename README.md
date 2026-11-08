@@ -194,7 +194,7 @@ Logs go to stderr and never mix with the generated config on stdout.
 | `--exclude-tags` |         | Exclude stacks with these tags                                    |
 | `--exclude-path` |         | Exclude stacks at or under directories matching this glob         |
 
-Path filters are globs matched against each stack's directory and its parent directories, so a pattern selects everything nested under what it matches: `infra` selects `infra`, `infra/vpc` and `infra/vpc/subnet`, and `*/vpc` selects `prod/vpc` and `prod/vpc/subnet`. `*` matches within one path segment, and `**` matches any number of segments, including none (`**/vpc` also selects a top-level `vpc`). `?`, `[...]` classes and `\` escapes follow Go's [`path.Match`](https://pkg.go.dev/path#Match). Patterns are relative to `--root`: `infra`, `/infra`, `./infra` and `infra/` are the same filter.
+Path filters are globs matched against each stack's directory and its parent directories, so a pattern selects everything nested under what it matches: `infra` selects `infra`, `infra/vpc` and `infra/vpc/subnet`, and `*/vpc` selects `prod/vpc` and `prod/vpc/subnet`. `*` matches within one path segment, and `**` matches any number of segments, including none (`**/vpc` also selects a top-level `vpc`). `?`, `[...]` classes and `\` escapes follow Go's [`path.Match`](https://pkg.go.dev/path#Match) (on Windows, `\` is a path separator instead). Patterns are relative to `--root`: `infra`, `/infra`, `./infra` and `infra/` are the same filter.
 
 **Naming**
 
@@ -249,7 +249,7 @@ See [Workflows](#workflows) for how workflows are generated, assigned and merged
 
 **Other commands**
 
-- `terramate-atlantis-config validate atlantis.yaml` checks an existing file: `version: 3`, a `dir` for every project, valid and unique project names, no two unnamed projects sharing a dir and workspace, and `depends_on` entries that name existing projects. A project whose workflow isn't defined in the file only gets a warning, since Atlantis also looks it up in the server-side repo config. Exits `1` on any error.
+- `terramate-atlantis-config validate atlantis.yaml` checks an existing file: `version: 3`, a `dir` for every project, valid and unique project names, every project that shares a dir and workspace with another one has a name, project dirs inside the repository (no `..`), and `depends_on` entries that name existing projects. A project whose workflow isn't defined in the file only gets a warning, since Atlantis also looks it up in the server-side repo config. Exits `1` on any error.
 - `terramate-atlantis-config version` prints the version, commit and build date.
 
 ### Per-stack globals
@@ -310,9 +310,10 @@ With `--depends-on` and/or `--execution-order-groups`, stack ordering is read fr
 `depends_on` lists **project names**, which is what Atlantis matches it against, so `--depends-on` requires `--create-project-name` (the default). Stacks that aren't part of the generated config (filtered out, not changed, or skipped) aren't listed in `depends_on`, but ordering is followed through them as `terramate run` does: if `a` runs after `m` and `m` after `z`, `a` still depends on `z` when `m` isn't generated. A dependency cycle is reported as a warning.
 
 ```hcl
+# stacks/app/api/stack.tm.hcl
 stack {
   name  = "api"
-  after = ["../dns", "tag:database"]
+  after = ["/stacks/network/dns", "tag:database"]
 }
 ```
 
