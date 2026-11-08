@@ -1,0 +1,40 @@
+---
+name: e2e
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  e2e:
+    name: e2e (atlantis)
+    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Start Gitea and Atlantis
+        run: make -C e2e up
+      - name: Run scenarios
+        run: make -C e2e test
+      - name: Dump service logs
+        if: failure()
+        run: docker compose --project-directory e2e logs --no-color --timestamps
+      - name: Tear down
+        if: always()
+        run: make -C e2e clean
