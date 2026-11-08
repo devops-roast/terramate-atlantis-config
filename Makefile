@@ -4,8 +4,10 @@
 
 BINARY  := terramate-atlantis-config
 MODULE  := github.com/devops-roast/$(BINARY)/cmd
+# Match full release tags only: the moving major tag (v1) that release.yml
+# maintains points at the same commit and would otherwise win.
 VERSION := $(shell \
-  git describe --tags --always --dirty 2>/dev/null \
+  git describe --tags --always --dirty --match 'v[0-9]*.[0-9]*.[0-9]*' 2>/dev/null \
   || echo "v0.1.0-dev")
 COMMIT  := $(shell \
   git rev-parse --short HEAD 2>/dev/null \
