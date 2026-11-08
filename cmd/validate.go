@@ -49,9 +49,10 @@ func validateConfig(cfg atlantis.Config) []string {
 		issues = append(issues, "version must be 3")
 	}
 
-	// Atlantis identifies a project by dir + workspace, so the same dir may
-	// appear several times with different workspaces.
-	seenDirWorkspaces := map[string]struct{}{}
+	// Atlantis identifies an unnamed project by dir + workspace. The same
+	// dir + workspace may appear several times only if every such project
+	// has a name, so each one can be targeted on its own.
+	allNamedByDirWorkspace := map[string]bool{}
 	seenNames := map[string]struct{}{}
 	for i, project := range cfg.Projects {
 		if project.Dir == "" {
@@ -62,10 +63,16 @@ func validateConfig(cfg atlantis.Config) []string {
 				workspace = "default"
 			}
 			key := project.Dir + "\x00" + workspace
-			if _, exists := seenDirWorkspaces[key]; exists {
-				issues = append(issues, fmt.Sprintf("duplicate project dir: %s (workspace %s)", project.Dir, workspace))
+			named := project.Name != ""
+			if allNamed, exists := allNamedByDirWorkspace[key]; exists {
+				if !allNamed || !named {
+					issues = append(issues, fmt.Sprintf(
+						"duplicate project dir: %s (workspace %s); projects sharing a dir and workspace must all have a name",
+						project.Dir, workspace))
+				}
+				named = named && allNamed
 			}
-			seenDirWorkspaces[key] = struct{}{}
+			allNamedByDirWorkspace[key] = named
 		}
 
 		if project.Name != "" {

@@ -344,9 +344,10 @@ func TestConfigFileFlagEquivalents(t *testing.T) {
 		require.Equal(t, 0, res.code, res.stderr)
 		for _, p := range parsed(t, res.stdout).Projects {
 			if p.Dir == "stacks/prod" {
-				assert.Equal(t, []string{"approved", "mergeable"}, p.ApplyRequirements)
+				require.NotNil(t, p.ApplyRequirements)
+				assert.Equal(t, []string{"approved", "mergeable"}, *p.ApplyRequirements)
 			} else {
-				assert.Empty(t, p.ApplyRequirements)
+				assert.Nil(t, p.ApplyRequirements)
 			}
 		}
 	})

@@ -528,6 +528,7 @@ func TestGenerateApplyRequirementsPrecedence(t *testing.T) {
 		{Dir: "stack/a", Tags: []string{"prod"}, ApplyRequirements: []string{"approved"}},
 		{Dir: "stack/b", Tags: []string{"prod"}},
 		{Dir: "stack/c"},
+		{Dir: "stack/d", Tags: []string{"prod"}, ApplyRequirements: []string{}},
 	}
 
 	cfg := mustGenerate(t, stacks, Options{
@@ -545,16 +546,51 @@ func TestGenerateApplyRequirementsPrecedence(t *testing.T) {
 		projects[project.Dir] = project
 	}
 
-	if !reflect.DeepEqual(projects["stack/a"].ApplyRequirements, []string{"approved"}) {
-		t.Fatalf("stack/a apply_requirements: got %#v", projects["stack/a"].ApplyRequirements)
+	if got := projects["stack/a"].ApplyRequirements; got == nil || !reflect.DeepEqual(*got, []string{"approved"}) {
+		t.Fatalf("stack/a apply_requirements: got %#v", got)
 	}
 
-	if !reflect.DeepEqual(projects["stack/b"].ApplyRequirements, []string{"policy_check"}) {
-		t.Fatalf("stack/b apply_requirements: got %#v", projects["stack/b"].ApplyRequirements)
+	if got := projects["stack/b"].ApplyRequirements; got == nil || !reflect.DeepEqual(*got, []string{"policy_check"}) {
+		t.Fatalf("stack/b apply_requirements: got %#v", got)
 	}
 
-	if !reflect.DeepEqual(projects["stack/c"].ApplyRequirements, []string{"mergeable"}) {
-		t.Fatalf("stack/c apply_requirements: got %#v", projects["stack/c"].ApplyRequirements)
+	if got := projects["stack/c"].ApplyRequirements; got == nil || !reflect.DeepEqual(*got, []string{"mergeable"}) {
+		t.Fatalf("stack/c apply_requirements: got %#v", got)
+	}
+
+	// An explicit empty list beats tag and default requirements.
+	if got := projects["stack/d"].ApplyRequirements; got == nil || len(*got) != 0 {
+		t.Fatalf("stack/d apply_requirements: want explicit empty list, got %#v", got)
+	}
+}
+
+func TestApplyRequirementsMarshaling(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := Generate([]discovery.StackInfo{
+		{Dir: "empty", ApplyRequirements: []string{}},
+		{Dir: "unset"},
+	}, Options{})
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+
+	// Empty must be written (Atlantis reads it as "no requirements"); unset
+	// must be omitted (Atlantis then uses the server-side requirements).
+	yamlOut, err := MarshalYAML(cfg, false)
+	if err != nil {
+		t.Fatalf("marshal yaml: %v", err)
+	}
+	if n := strings.Count(string(yamlOut), "apply_requirements: []"); n != 1 {
+		t.Fatalf("want exactly one `apply_requirements: []` in YAML, got %d:\n%s", n, yamlOut)
+	}
+
+	jsonOut, err := MarshalJSON(cfg)
+	if err != nil {
+		t.Fatalf("marshal json: %v", err)
+	}
+	if n := strings.Count(string(jsonOut), `"apply_requirements": []`); n != 1 {
+		t.Fatalf("want exactly one empty apply_requirements in JSON, got %d:\n%s", n, jsonOut)
 	}
 }
 
@@ -1080,5 +1116,29 @@ func TestGenerateWarnsOnDependencyCycle(t *testing.T) {
 	mustGenerate(t, stacks, Options{ExecutionOrderGroups: true})
 	if len(warnings) != 0 {
 		t.Fatalf("unexpected warnings: %v", warnings)
+	}
+}
+
+func TestGenerateEmptyWhenModifiedOverride(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := Generate([]discovery.StackInfo{
+		{Dir: "app", WhenModified: []string{}},
+	}, Options{WhenModified: []string{"*.tf"}})
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+
+	got := cfg.Projects[0].Autoplan.WhenModified
+	if got == nil || len(got) != 0 {
+		t.Fatalf("empty when_modified override must stay an empty list, got %#v", got)
+	}
+
+	out, err := MarshalJSON(cfg)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !strings.Contains(string(out), `"when_modified": []`) {
+		t.Fatalf("JSON must render an empty list, not null:\n%s", out)
 	}
 }

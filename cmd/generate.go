@@ -98,9 +98,9 @@ supported via Terramate globals (atlantis_skip, atlantis_workflow, etc).`,
 	flags.StringVar(&opts.Workflow, "workflow", "", "Default workflow name for all projects")
 	flags.StringVar(&opts.TerraformVersion, "terraform-version", "", "Default terraform version for all projects")
 	flags.StringVar(&opts.Filter, "filter", "", "Filter stacks by tags (Terramate tag filter syntax)")
-	flags.StringVar(&opts.FilterPath, "filter-path", "", "Filter stacks by directory path glob")
+	flags.StringVar(&opts.FilterPath, "filter-path", "", "Include only stacks at or under directories matching this path glob")
 	flags.StringVar(&opts.ExcludeTags, "exclude-tags", "", "Exclude stacks by tags (Terramate tag filter syntax)")
-	flags.StringVar(&opts.ExcludePath, "exclude-path", "", "Exclude stacks by directory path glob")
+	flags.StringVar(&opts.ExcludePath, "exclude-path", "", "Exclude stacks at or under directories matching this path glob")
 	flags.BoolVar(&opts.Changed, "changed", false, "Only include stacks changed from the base ref")
 	flags.StringVar(&opts.ChangedBaseRef, "changed-base-ref", "main", "Base git ref for --changed stack detection")
 	flags.BoolVar(&opts.CreateProjectName, "create-project-name", true, "Generate project names from stack paths")
@@ -119,7 +119,7 @@ supported via Terramate globals (atlantis_skip, atlantis_workflow, etc).`,
 	flags.BoolVar(&opts.DependsOn, "depends-on", false, "Populate depends_on from stack after/before dependencies")
 	flags.StringVar(&opts.ProjectNameStrategy, "project-name-strategy", atlantis.NameStrategyAutoStrip, "Naming strategy: "+strings.Join(validNameStrategies, ", "))
 	flags.StringVar(&opts.ProjectNamePrefix, "project-name-prefix", "", "Strip this prefix from stack paths when generating names")
-	flags.IntVar(&opts.ProjectNameDepth, "project-name-depth", 3, "Number of trailing path segments for last-n strategy")
+	flags.IntVar(&opts.ProjectNameDepth, "project-name-depth", 3, "Number of trailing path segments for last-n strategy (at least 1)")
 	flags.StringSliceVar(&opts.WhenModified, "when-modified", []string{"*.tf", "*.tf.json", ".terraform.lock.hcl"}, "Default when_modified patterns")
 	flags.StringSliceVar(&opts.ApplyRequirements, "apply-requirements", nil, "Default apply_requirements entries")
 	flags.StringSliceVar(&opts.TagWorkflow, "tag-workflow", nil, "Tag to workflow mapping (format: tag=workflow; comma-separated or repeated)")
@@ -140,6 +140,9 @@ func validateGenerateOptions(opts *GenerateOptions) error {
 	if !contains(validNameStrategies, opts.ProjectNameStrategy) {
 		return fmt.Errorf("invalid project-name-strategy %q, expected one of: %s",
 			opts.ProjectNameStrategy, strings.Join(validNameStrategies, ", "))
+	}
+	if opts.ProjectNameDepth < 1 {
+		return fmt.Errorf("invalid project-name-depth %d, expected a value of at least 1", opts.ProjectNameDepth)
 	}
 	if err := atlantis.ValidateSafeguards(opts.WorkflowDisableSafeguards); err != nil {
 		return fmt.Errorf("--workflow-disable-safeguards: %w", err)

@@ -52,6 +52,23 @@ func TestExtractAtlantisGlobals(t *testing.T) {
 			want: AtlantisOverrides{TerraformVersion: "1.5.0"},
 		},
 		{
+			name: "null values are treated as unset",
+			globals: map[string]cty.Value{
+				"atlantis_skip":          cty.NullVal(cty.Bool),
+				"atlantis_workflow":      cty.NullVal(cty.String),
+				"atlantis_extra_deps":    cty.NullVal(cty.List(cty.String)),
+				"atlantis_when_modified": cty.NullVal(cty.DynamicPseudoType),
+			},
+			want: AtlantisOverrides{},
+		},
+		{
+			name: "null list element is an error, not a panic",
+			globals: map[string]cty.Value{
+				"atlantis_extra_deps": cty.ListVal([]cty.Value{cty.StringVal("a"), cty.NullVal(cty.String)}),
+			},
+			wantErr: true,
+		},
+		{
 			name: "atlantis_when_modified set",
 			globals: map[string]cty.Value{
 				"atlantis_when_modified": cty.ListVal([]cty.Value{cty.StringVal("*.tf"), cty.StringVal("*.tfvars")}),

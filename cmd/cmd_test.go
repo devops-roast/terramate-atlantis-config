@@ -267,6 +267,7 @@ func TestConfigFileValuesAreHonouredAndValidated(t *testing.T) {
 		{"invalid format", "format: xml\n", `invalid format "xml"`},
 		{"invalid sort_by", "sort_by: size\n", `invalid sort-by "size"`},
 		{"invalid strategy", "project_name_strategy: short\n", `invalid project-name-strategy "short"`},
+		{"invalid depth", "project_name_depth: 0\n", `invalid project-name-depth 0`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := newFixture(t)
@@ -301,6 +302,7 @@ func TestInvalidEnumFlags(t *testing.T) {
 		{[]string{"--format", "toml"}, `invalid format "toml", expected one of: yaml, json`},
 		{[]string{"--sort-by", "bogus"}, `invalid sort-by "bogus", expected one of: dir, name, execution_order_group`},
 		{[]string{"--project-name-strategy", "bogus"}, `invalid project-name-strategy "bogus", expected one of: auto-strip, stack-name, last-n, full`},
+		{[]string{"--project-name-depth", "-1"}, `invalid project-name-depth -1, expected a value of at least 1`},
 		{[]string{"--log-level", "loud"}, `invalid --log-level "loud", expected one of: trace, debug, info, warn, error, disabled`},
 	} {
 		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {

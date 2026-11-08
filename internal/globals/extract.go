@@ -23,7 +23,9 @@ func ExtractAtlantisGlobals(globals map[string]cty.Value) (AtlantisOverrides, er
 	var overrides AtlantisOverrides
 
 	for key, val := range globals {
-		if !strings.HasPrefix(key, "atlantis_") {
+		// A null value (e.g. from `cond ? [...] : null`) means "not set";
+		// cty panics on most accessors for null values.
+		if !strings.HasPrefix(key, "atlantis_") || val.IsNull() {
 			continue
 		}
 
@@ -81,7 +83,7 @@ func asStringSlice(key string, val cty.Value) ([]string, error) {
 	values := val.AsValueSlice()
 	result := make([]string, 0, len(values))
 	for _, item := range values {
-		if !item.Type().Equals(cty.String) {
+		if !item.Type().Equals(cty.String) || item.IsNull() {
 			return nil, fmt.Errorf("%s must be list of strings", key)
 		}
 		result = append(result, item.AsString())
