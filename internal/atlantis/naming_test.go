@@ -2,6 +2,7 @@ package atlantis
 
 import (
 	"reflect"
+	"runtime"
 	"sort"
 	"testing"
 
@@ -309,4 +310,28 @@ func sortedNames(cfg Config) []string {
 	names := projectNames(cfg)
 	sort.Strings(names)
 	return names
+}
+
+// On Linux and macOS a backslash is part of a directory name, so a stack in
+// `a\b` must keep that dir instead of pointing Atlantis at a nonexistent
+// `a/b`.
+func TestBackslashInDirIsNotASeparator(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS == "windows" {
+		t.Skip("backslash is the path separator on Windows")
+	}
+
+	cfg, err := Generate([]discovery.StackInfo{{Dir: `a\b`}, {Dir: "c"}}, Options{CreateProjectName: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dirs := []string{cfg.Projects[0].Dir, cfg.Projects[1].Dir}
+	if want := []string{`a\b`, "c"}; !reflect.DeepEqual(dirs, want) {
+		t.Fatalf("dirs: got %q, want %q", dirs, want)
+	}
+	for _, p := range cfg.Projects {
+		if !ValidProjectName(p.Name) {
+			t.Fatalf("invalid name %q for %q", p.Name, p.Dir)
+		}
+	}
 }
