@@ -252,6 +252,8 @@ Set Terramate globals in any stack to override defaults for that project.
 
 `atlantis_when_modified = []` and `atlantis_apply_requirements = []` are explicit overrides, not "unset". `apply_requirements: []` is written to the project, which tells Atlantis to require nothing before apply, overriding the server-side requirements as well (when the server's `allowed_overrides` includes `apply_requirements`). Leave the global unset to fall back to tag requirements, `--apply-requirements`, and then the server-side defaults.
 
+Any other global starting with `atlantis_` (usually a typo such as `atlantis_workflows`) is ignored with a warning on stderr.
+
 ```hcl
 globals {
   atlantis_workflow          = "production"

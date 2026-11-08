@@ -242,6 +242,7 @@ func runGenerate(cmd *cobra.Command, opts *GenerateOptions) error {
 		ExcludePath: opts.ExcludePath,
 		Changed:     opts.Changed,
 		BaseRef:     opts.ChangedBaseRef,
+		Warnf:       warnf,
 	})
 	if err != nil {
 		return fmt.Errorf("discovering stacks: %w", err)

@@ -28,6 +28,10 @@ type DiscoverOptions struct {
 	ExcludePath string
 	Changed     bool
 	BaseRef     string
+
+	// Warnf receives non-fatal warnings, such as unknown atlantis_*
+	// globals. A nil Warnf discards them.
+	Warnf func(format string, args ...any)
 }
 
 // StackInfo contains discovered stack metadata and atlantis overrides.
@@ -90,17 +94,14 @@ func Discover(opts DiscoverOptions) (Result, error) {
 		return Result{}, fmt.Errorf("loading stacks: %w", err)
 	}
 
-	type stackOverrides struct {
-		overrides globalsExtract.AtlantisOverrides
-		err       error
-	}
+	// Keyed by StackInfo.Dir.
 	overridesByDir := make(map[string]stackOverrides, len(stacks))
 
 	allStacks := make([]StackInfo, 0, len(stacks))
 	for _, sortable := range stacks {
 		stack := sortable.Stack
 		overrides, err := atlantisOverrides(root, stack)
-		overridesByDir[stack.Dir.String()] = stackOverrides{overrides: overrides, err: err}
+		overridesByDir[normalizeStackPath(stack.Dir.String())] = stackOverrides{overrides: overrides, err: err}
 
 		allStacks = append(allStacks, StackInfo{
 			Name:        stack.Name,
@@ -188,7 +189,7 @@ func Discover(opts DiscoverOptions) (Result, error) {
 			}
 		}
 
-		stored := overridesByDir[stack.Dir.String()]
+		stored := overridesByDir[stackDir]
 		if stored.err != nil {
 			return Result{}, stored.err
 		}
@@ -249,7 +250,41 @@ func Discover(opts DiscoverOptions) (Result, error) {
 		return discovered[i].Dir < discovered[j].Dir
 	})
 
+	if opts.Warnf != nil {
+		warnUnknownGlobals(discovered, overridesByDir, opts.Warnf)
+	}
+
 	return Result{Stacks: discovered, AllStacks: allStacks}, nil
+}
+
+// warnUnknownGlobals reports atlantis_* globals that the generator does not
+// read, usually typos (atlantis_workflows), once per global, naming the
+// selected stacks that see it. Globals are inherited, so one typo in a
+// parent directory reaches many stacks.
+func warnUnknownGlobals(stacks []StackInfo, overrides map[string]stackOverrides, warnf func(string, ...any)) {
+	dirsByKey := map[string][]string{}
+	for _, stack := range stacks {
+		for _, key := range overrides[stack.Dir].overrides.UnknownKeys {
+			dirsByKey[key] = append(dirsByKey[key], stack.Dir)
+		}
+	}
+
+	keys := make([]string, 0, len(dirsByKey))
+	for key := range dirsByKey {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	const maxListed = 3
+	for _, key := range keys {
+		dirs := dirsByKey[key]
+		where := strings.Join(dirs, ", ")
+		if len(dirs) > maxListed {
+			where = fmt.Sprintf("%s and %d more", strings.Join(dirs[:maxListed], ", "), len(dirs)-maxListed)
+		}
+		warnf("unknown global %q (stacks: %s) is ignored; known atlantis globals: %s",
+			key, where, strings.Join(globalsExtract.KnownGlobals, ", "))
+	}
 }
 
 // atlantisOverrides evaluates a stack's globals and extracts the atlantis_*
@@ -533,4 +568,10 @@ func classChar(chunk string) (r rune, rest string, err error) {
 		return 0, "", path.ErrBadPattern
 	}
 	return r, rest, nil
+}
+
+// stackOverrides is the result of reading one stack's atlantis_* globals.
+type stackOverrides struct {
+	overrides globalsExtract.AtlantisOverrides
+	err       error
 }

@@ -473,3 +473,18 @@ func TestConfigEmptyWhenModifiedIsHonored(t *testing.T) {
 	require.Equal(t, 0, res.code, res.stderr)
 	assert.Equal(t, []string{"*.tf", "*.tf.json", ".terraform.lock.hcl"}, parsed(t, res.stdout).Projects[0].Autoplan.WhenModified)
 }
+
+// A misspelled atlantis_* global must not be silently ignored. Globals are
+// inherited, so a typo in a parent directory is reported once.
+func TestUnknownAtlantisGlobalWarns(t *testing.T) {
+	root := newFixture(t)
+	writeFile(t, filepath.Join(root, "stacks", "globals.tm.hcl"), "globals {\n  atlantis_workflows = \"x\"\n}\n")
+
+	res := run(t, "generate", "--root", root, "--no-header")
+
+	require.Equal(t, 0, res.code, res.stderr)
+	assert.Equal(t, 1, strings.Count(res.stderr, "Warning:"), res.stderr)
+	assert.Contains(t, res.stderr, `unknown global "atlantis_workflows" (stacks: stacks/dev, stacks/prod) is ignored`)
+	assert.Contains(t, res.stderr, "known atlantis globals: atlantis_apply_requirements,")
+	assert.NotContains(t, res.stdout, "Warning", "warnings never mix with the generated config")
+}
