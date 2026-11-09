@@ -249,23 +249,38 @@ func MarshalYAML(cfg Config, addHeader bool) ([]byte, error) {
 	return append([]byte(header), marshaled...), nil
 }
 
-// quoteTrailingWhitespace double-quotes multi-line strings that have
-// whitespace at the end of a line. yaml.v3 writes them as literal blocks,
-// which puts that whitespace at the end of an output line, where trailing
-// whitespace fixers (e.g. the pre-commit trailing-whitespace hook) strip it,
-// changing the value and making --check fail.
+// quoteTrailingWhitespace double-quotes the multi-line strings that yaml.v3
+// would write as a literal block that doesn't survive text fixers:
+//   - whitespace at the end of a line ends up at the end of an output line,
+//     where trailing whitespace fixers (e.g. the pre-commit
+//     trailing-whitespace hook) strip it;
+//   - trailing blank lines ("a\n\n", kept with "|+") end up at the end of
+//     the file when the string is the last value, where end-of-file fixers
+//     (e.g. end-of-file-fixer) remove them.
+//
+// Either one changes the value and makes --check fail on every run.
 func quoteTrailingWhitespace(node *yaml.Node) {
-	if node.Kind == yaml.ScalarNode && node.Tag == "!!str" && strings.Contains(node.Value, "\n") {
-		for _, line := range strings.Split(node.Value, "\n") {
-			if strings.TrimRight(line, " \t") != line {
-				node.Style = yaml.DoubleQuotedStyle
-				break
-			}
-		}
+	if node.Kind == yaml.ScalarNode && node.Tag == "!!str" && strings.Contains(node.Value, "\n") &&
+		!literalBlockSafe(node.Value) {
+		node.Style = yaml.DoubleQuotedStyle
 	}
 	for _, child := range node.Content {
 		quoteTrailingWhitespace(child)
 	}
+}
+
+// literalBlockSafe reports whether a multi-line string can be written as a
+// literal block, see quoteTrailingWhitespace.
+func literalBlockSafe(value string) bool {
+	if strings.HasSuffix(value, "\n\n") {
+		return false
+	}
+	for line := range strings.SplitSeq(value, "\n") {
+		if strings.TrimRight(line, " \t\r\v\f") != line {
+			return false
+		}
+	}
+	return true
 }
 
 // MarshalJSON marshals an Atlantis Config into indented JSON. Like the YAML
