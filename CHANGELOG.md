@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.1](https://github.com/devops-roast/terramate-atlantis-config/compare/v1.2.0...v1.2.1) (2026-11-09)
+
+
+### Bug Fixes
+
+* audit fixes for flags, path filters, naming, ordering, validate and integrations ([#14](https://github.com/devops-roast/terramate-atlantis-config/issues/14)) ([e1e5858](https://github.com/devops-roast/terramate-atlantis-config/commit/e1e5858089200425067a9456193ba57df7d9ec6f))
+* audit round 4 — ordering, path filters, YAML output and validate ([#15](https://github.com/devops-roast/terramate-atlantis-config/issues/15)) ([fb39403](https://github.com/devops-roast/terramate-atlantis-config/commit/fb3940385e635cb127d980c61f99bfcd4e117d4d))
+* honor empty overrides, fix path filters and validation bugs ([#12](https://github.com/devops-roast/terramate-atlantis-config/issues/12)) ([6b7292c](https://github.com/devops-roast/terramate-atlantis-config/commit/6b7292ccd51aae3cfdf7ccc5e908c9df0230f789))
+
 ## [1.2.0](https://github.com/devops-roast/terramate-atlantis-config/compare/v1.1.0...v1.2.0) (2026-11-08)
 
 
