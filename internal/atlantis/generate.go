@@ -41,6 +41,12 @@ type Options struct {
 	ProjectNamePrefix    string // explicit prefix to strip (auto-strip and stack-name)
 	ProjectNameDepth     int    // number of trailing path segments to use (for last-n)
 
+	// WhenModifiedFromConfig adds each stack's ConfigDeps to its
+	// when_modified, after the defaults and atlantis_extra_deps, and drops
+	// duplicate entries. A stack's atlantis_when_modified still replaces
+	// the whole list.
+	WhenModifiedFromConfig bool
+
 	// AllStacks is every stack in the repository, whatever the filters
 	// (--changed, --filter, --filter-path, --exclude-*) selected:
 	//   - project names are computed against it (minus skipped stacks), so a
@@ -117,11 +123,14 @@ func Generate(stacks []discovery.StackInfo, opts Options) (Config, error) {
 			project.Autoplan.Enabled = *stack.AutoplanEnabled
 		}
 
-		if stack.WhenModified != nil {
+		switch {
+		case stack.WhenModified != nil:
 			// Copied non-nil even when empty: JSON renders nil as null, which
 			// Atlantis reads as "use the default patterns".
 			project.Autoplan.WhenModified = append([]string{}, stack.WhenModified...)
-		} else {
+		case opts.WhenModifiedFromConfig:
+			project.Autoplan.WhenModified = dedupe(mergeWhenModified(opts.WhenModified, stack.ExtraDeps, stack.ConfigDeps))
+		default:
 			project.Autoplan.WhenModified = mergeWhenModified(opts.WhenModified, stack.ExtraDeps)
 		}
 
@@ -409,11 +418,26 @@ func copyToPtr(s []string) *[]string {
 	return &c
 }
 
-func mergeWhenModified(defaults, extraDeps []string) []string {
-	merged := make([]string, 0, len(defaults)+len(extraDeps))
-	merged = append(merged, defaults...)
-	merged = append(merged, extraDeps...)
+func mergeWhenModified(lists ...[]string) []string {
+	merged := []string{}
+	for _, list := range lists {
+		merged = append(merged, list...)
+	}
 	return merged
+}
+
+// dedupe drops repeated entries, keeping the first occurrence.
+func dedupe(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	out := make([]string, 0, len(values))
+	for _, v := range values {
+		if _, ok := seen[v]; ok {
+			continue
+		}
+		seen[v] = struct{}{}
+		out = append(out, v)
+	}
+	return out
 }
 
 func workflowFromTags(tags []string, mapping map[string]string) (string, bool) {

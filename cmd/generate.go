@@ -58,6 +58,9 @@ type GenerateOptions struct {
 	TagWorkflow          []string
 	TagRequirements      []string
 	ConfigWorkflows      map[string]interface{}
+	// WhenModifiedFromConfig adds the files each stack's Terramate config
+	// depends on to its when_modified patterns.
+	WhenModifiedFromConfig bool
 }
 
 const stdoutOutput = "-"
@@ -124,6 +127,8 @@ Flags passed explicitly override the config file.`,
 	flags.StringVar(&opts.ProjectNamePrefix, "project-name-prefix", "", "Strip this prefix from stack paths when generating names (auto-strip and stack-name strategies)")
 	flags.IntVar(&opts.ProjectNameDepth, "project-name-depth", 3, "Number of trailing path segments for last-n strategy (at least 1)")
 	flags.StringSliceVar(&opts.WhenModified, "when-modified", []string{"*.tf", "*.tf.json", ".terraform.lock.hcl"}, "Default autoplan when_modified patterns")
+	flags.BoolVar(&opts.WhenModifiedFromConfig, "when-modified-from-config", false,
+		"Add the files each stack depends on to its when_modified: Terramate config of the stack and parent dirs, imports, watch files, local modules")
 	flags.StringSliceVar(&opts.ApplyRequirements, "apply-requirements", nil, "Default apply_requirements for all projects")
 	flags.StringSliceVar(&opts.TagWorkflow, "tag-workflow", nil, "Tag to workflow mapping (format: tag=workflow; comma-separated or repeated)")
 	flags.StringArrayVar(&opts.TagRequirements, "tag-requirements", nil, "Tag to requirements mapping (format: tag=req1,req2; repeat the flag for more tags)")
@@ -246,6 +251,8 @@ func runGenerate(cmd *cobra.Command, opts *GenerateOptions) error {
 		Changed:     opts.Changed,
 		BaseRef:     opts.ChangedBaseRef,
 		Warnf:       warnf,
+
+		WhenModifiedFromConfig: opts.WhenModifiedFromConfig,
 	})
 	if err != nil {
 		return fmt.Errorf("discovering stacks: %w", err)
@@ -271,6 +278,8 @@ func runGenerate(cmd *cobra.Command, opts *GenerateOptions) error {
 		ProjectNameDepth:     opts.ProjectNameDepth,
 		AllStacks:            discovered.AllStacks,
 		Warnf:                warnf,
+
+		WhenModifiedFromConfig: opts.WhenModifiedFromConfig,
 	})
 	if err != nil {
 		return err
@@ -475,6 +484,9 @@ func mergeConfig(cmd *cobra.Command, opts *GenerateOptions, cfg *internalconfig.
 	// explicit value, like --when-modified=.
 	if !cmd.Flags().Changed("when-modified") && cfg.WhenModified != nil {
 		opts.WhenModified = append([]string(nil), cfg.WhenModified...)
+	}
+	if !cmd.Flags().Changed("when-modified-from-config") && cfg.WhenModifiedFromConfig != nil {
+		opts.WhenModifiedFromConfig = *cfg.WhenModifiedFromConfig
 	}
 	if !cmd.Flags().Changed("apply-requirements") && cfg.ApplyRequirements != nil {
 		opts.ApplyRequirements = append([]string(nil), cfg.ApplyRequirements...)

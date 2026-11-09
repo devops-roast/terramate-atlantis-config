@@ -38,6 +38,7 @@ type FileConfig struct {
 	ExecutionOrderGroups      *bool                 `yaml:"execution_order_groups"`
 	DependsOn                 *bool                 `yaml:"depends_on"`
 	WhenModified              []string              `yaml:"when_modified"`
+	WhenModifiedFromConfig    *bool                 `yaml:"when_modified_from_config"`
 	ApplyRequirements         []string              `yaml:"apply_requirements"`
 	TagWorkflows              map[string]string     `yaml:"tag_workflows"`
 	TagRequirements           map[string]StringList `yaml:"tag_requirements"`

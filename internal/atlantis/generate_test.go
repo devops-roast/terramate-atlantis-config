@@ -1317,3 +1317,56 @@ func TestMarshalJSONDoesNotEscapeHTML(t *testing.T) {
 		t.Fatalf("JSON escapes shell characters:\n%s", out)
 	}
 }
+
+func TestGenerateWhenModifiedFromConfig(t *testing.T) {
+	t.Parallel()
+
+	stacks := []discovery.StackInfo{
+		{
+			Dir:        "a/dup",
+			ExtraDeps:  []string{"../*.tm.hcl", "extra.yaml", "*.tf"},
+			ConfigDeps: []string{"*.tm.hcl", "*.tm", "../*.tm.hcl", "../*.tm", "../../*.tm.hcl", "../../*.tm"},
+		},
+		{
+			Dir:          "a/override",
+			WhenModified: []string{"*.tf"},
+			ConfigDeps:   []string{"*.tm.hcl"},
+		},
+		{
+			Dir:          "a/empty-override",
+			WhenModified: []string{},
+		},
+	}
+	opts := Options{Autoplan: true, WhenModified: []string{"*.tf", "*.tf.json"}}
+
+	whenModified := func(cfg Config) map[string][]string {
+		m := map[string][]string{}
+		for _, p := range cfg.Projects {
+			m[p.Dir] = p.Autoplan.WhenModified
+		}
+		return m
+	}
+
+	// Off: ConfigDeps are ignored and duplicates are kept, as before.
+	off := whenModified(mustGenerate(t, stacks, opts))
+	if want := []string{"*.tf", "*.tf.json", "../*.tm.hcl", "extra.yaml", "*.tf"}; !reflect.DeepEqual(off["a/dup"], want) {
+		t.Fatalf("off: got %#v, want %#v", off["a/dup"], want)
+	}
+
+	opts.WhenModifiedFromConfig = true
+	on := whenModified(mustGenerate(t, stacks, opts))
+	want := map[string][]string{
+		// Defaults, then atlantis_extra_deps, then the derived entries; the
+		// first occurrence of a duplicate wins.
+		"a/dup": {
+			"*.tf", "*.tf.json", "../*.tm.hcl", "extra.yaml",
+			"*.tm.hcl", "*.tm", "../*.tm", "../../*.tm.hcl", "../../*.tm",
+		},
+		// atlantis_when_modified still replaces the whole list.
+		"a/override":       {"*.tf"},
+		"a/empty-override": {},
+	}
+	if !reflect.DeepEqual(on, want) {
+		t.Fatalf("on: got %#v, want %#v", on, want)
+	}
+}

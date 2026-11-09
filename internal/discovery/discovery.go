@@ -31,6 +31,10 @@ type DiscoverOptions struct {
 	Changed     bool
 	BaseRef     string
 
+	// WhenModifiedFromConfig fills StackInfo.ConfigDeps for every selected
+	// stack that isn't skipped and has no atlantis_when_modified.
+	WhenModifiedFromConfig bool
+
 	// Warnf receives non-fatal warnings, such as unknown atlantis_*
 	// globals. A nil Warnf discards them.
 	Warnf func(format string, args ...any)
@@ -62,6 +66,12 @@ type StackInfo struct {
 	ExtraDeps         []string // additional when_modified entries
 	WhenModified      []string // full override of when_modified (nil = use default)
 	ApplyRequirements []string // nil = use default; empty = explicitly none
+
+	// ConfigDeps are the when_modified entries derived from the stack's
+	// Terramate config (parent config files, imports, watch files, local
+	// modules), relative to the stack directory. Only set with
+	// DiscoverOptions.WhenModifiedFromConfig; see configDepsResolver.stackDeps.
+	ConfigDeps []string
 }
 
 // Result is the outcome of a discovery run.
@@ -197,6 +207,11 @@ func Discover(opts DiscoverOptions) (Result, error) {
 		}
 	}
 
+	var depsResolver *configDepsResolver
+	if opts.WhenModifiedFromConfig {
+		depsResolver = newConfigDepsResolver(root, opts.Warnf)
+	}
+
 	discovered := make([]StackInfo, 0, len(stacks))
 	for _, sortable := range stacks {
 		stack := sortable.Stack
@@ -244,6 +259,16 @@ func Discover(opts DiscoverOptions) (Result, error) {
 		}
 		afterDirs, beforeDirs := order.afterDirs, order.beforeDirs
 
+		// atlantis_when_modified replaces when_modified entirely, so the
+		// derived entries would be dropped anyway.
+		var configDeps []string
+		if depsResolver != nil && !overrides.Skip && overrides.WhenModified == nil {
+			configDeps, err = depsResolver.stackDeps(stack)
+			if err != nil {
+				return Result{}, err
+			}
+		}
+
 		discovered = append(discovered, StackInfo{
 			Name:              declaredName(root, stack),
 			ID:                stack.ID,
@@ -261,6 +286,7 @@ func Discover(opts DiscoverOptions) (Result, error) {
 			ExtraDeps:         append([]string(nil), overrides.ExtraDeps...),
 			WhenModified:      cloneKeepingNil(overrides.WhenModified),
 			ApplyRequirements: cloneKeepingNil(overrides.ApplyRequirements),
+			ConfigDeps:        configDeps,
 		})
 	}
 
