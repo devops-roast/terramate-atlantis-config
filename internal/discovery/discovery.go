@@ -392,7 +392,7 @@ func resolveOrderEntries(root *config.Root, stack *config.Stack, entries []strin
 // normalizeStackPath converts a Terramate project path ("/a/b", "/") into
 // the Dir format used by StackInfo ("a/b", ".").
 func normalizeStackPath(p string) string {
-	normalized := filepath.ToSlash(strings.TrimPrefix(strings.TrimSpace(p), "/"))
+	normalized := filepath.ToSlash(strings.TrimPrefix(p, "/"))
 	if normalized == "" {
 		return RootDir
 	}

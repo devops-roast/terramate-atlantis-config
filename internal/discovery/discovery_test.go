@@ -584,3 +584,28 @@ func TestDiscoverRejectsPathFiltersOutsideRoot(t *testing.T) {
 		t.Fatalf("filter other/../infra: got %d stacks, %v; want infra", len(result.Stacks), err)
 	}
 }
+
+// Whitespace is part of a directory name: a stack in "app " is not the stack
+// in "app". Trimming it made both stacks share the dir (and project name)
+// "app", which doesn't exist for one of them.
+func TestDiscoverKeepsWhitespaceInStackDirs(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "terramate.tm.hcl"), "terramate {}\n")
+	writeFile(t, filepath.Join(root, "app", "stack.tm.hcl"), "stack {}\n")
+	writeFile(t, filepath.Join(root, "app ", "stack.tm.hcl"), "stack {}\n")
+	writeFile(t, filepath.Join(root, " lead", "stack.tm.hcl"), "stack {}\n")
+
+	result, err := Discover(DiscoverOptions{RootDir: root})
+	if err != nil {
+		t.Fatalf("discover failed: %v", err)
+	}
+	var dirs []string
+	for _, s := range result.Stacks {
+		dirs = append(dirs, s.Dir)
+	}
+	if want := []string{" lead", "app", "app "}; !equalStrings(dirs, want) {
+		t.Fatalf("stack dirs: got %q, want %q", dirs, want)
+	}
+}
