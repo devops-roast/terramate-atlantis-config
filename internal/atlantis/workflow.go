@@ -79,12 +79,12 @@ func GenerateWorkflows(opts WorkflowOptions) map[string]interface{} {
 			"plan": map[string]interface{}{
 				"steps": []interface{}{
 					map[string]interface{}{"run": cmd("init", append([]string{"-input=false"}, opts.InitExtraArgs...)...)},
-					map[string]interface{}{"run": cmd("plan", append([]string{"-input=false", "-out=$PLANFILE"}, opts.PlanExtraArgs...)...)},
+					map[string]interface{}{"run": cmd("plan", append([]string{"-input=false", `-out="$PLANFILE"`}, opts.PlanExtraArgs...)...)},
 				},
 			},
 			"apply": map[string]interface{}{
 				"steps": []interface{}{
-					map[string]interface{}{"run": cmd("apply", append([]string{"$PLANFILE"}, opts.ApplyExtraArgs...)...)},
+					map[string]interface{}{"run": cmd("apply", append([]string{`"$PLANFILE"`}, opts.ApplyExtraArgs...)...)},
 				},
 			},
 		}

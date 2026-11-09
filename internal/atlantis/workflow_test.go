@@ -33,10 +33,10 @@ func TestGenerateWorkflows(t *testing.T) {
 			opts: WorkflowOptions{Enabled: true, WrapWithTerramate: true, DisableSafeguards: DefaultDisableSafeguards},
 			wantPlan: []string{
 				"terramate run --no-recursive --disable-safeguards=git -- terraform init -input=false",
-				"terramate run --no-recursive --disable-safeguards=git -- terraform plan -input=false -out=$PLANFILE",
+				`terramate run --no-recursive --disable-safeguards=git -- terraform plan -input=false -out="$PLANFILE"`,
 			},
 			wantApply: []string{
-				"terramate run --no-recursive --disable-safeguards=git -- terraform apply $PLANFILE",
+				`terramate run --no-recursive --disable-safeguards=git -- terraform apply "$PLANFILE"`,
 			},
 		},
 		{
@@ -44,27 +44,27 @@ func TestGenerateWorkflows(t *testing.T) {
 			opts: WorkflowOptions{Enabled: true, WrapWithTerramate: true},
 			wantPlan: []string{
 				"terramate run --no-recursive -- terraform init -input=false",
-				"terramate run --no-recursive -- terraform plan -input=false -out=$PLANFILE",
+				`terramate run --no-recursive -- terraform plan -input=false -out="$PLANFILE"`,
 			},
-			wantApply: []string{"terramate run --no-recursive -- terraform apply $PLANFILE"},
+			wantApply: []string{`terramate run --no-recursive -- terraform apply "$PLANFILE"`},
 		},
 		{
 			name: "wrapped with several safeguards disabled",
 			opts: WorkflowOptions{Enabled: true, WrapWithTerramate: true, DisableSafeguards: []string{"git-untracked", "outdated-code"}},
 			wantPlan: []string{
 				"terramate run --no-recursive --disable-safeguards=git-untracked,outdated-code -- terraform init -input=false",
-				"terramate run --no-recursive --disable-safeguards=git-untracked,outdated-code -- terraform plan -input=false -out=$PLANFILE",
+				`terramate run --no-recursive --disable-safeguards=git-untracked,outdated-code -- terraform plan -input=false -out="$PLANFILE"`,
 			},
-			wantApply: []string{"terramate run --no-recursive --disable-safeguards=git-untracked,outdated-code -- terraform apply $PLANFILE"},
+			wantApply: []string{`terramate run --no-recursive --disable-safeguards=git-untracked,outdated-code -- terraform apply "$PLANFILE"`},
 		},
 		{
 			name: "unwrapped ignores safeguards",
 			opts: WorkflowOptions{Enabled: true, WrapWithTerramate: false, DisableSafeguards: DefaultDisableSafeguards},
 			wantPlan: []string{
 				"terraform init -input=false",
-				"terraform plan -input=false -out=$PLANFILE",
+				`terraform plan -input=false -out="$PLANFILE"`,
 			},
-			wantApply: []string{"terraform apply $PLANFILE"},
+			wantApply: []string{`terraform apply "$PLANFILE"`},
 		},
 	}
 

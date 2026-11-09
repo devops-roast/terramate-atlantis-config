@@ -125,10 +125,10 @@ workflows:
     plan:
       steps:
         - run: terramate run --no-recursive -- terraform init -input=false
-        - run: terramate run --no-recursive -- terraform plan -input=false -out=$PLANFILE
+        - run: terramate run --no-recursive -- terraform plan -input=false -out="$PLANFILE"
     apply:
       steps:
-        - run: terramate run --no-recursive -- terraform apply $PLANFILE
+        - run: terramate run --no-recursive -- terraform apply "$PLANFILE"
 ```
 
 Every key matches a `generate` flag:
@@ -343,10 +343,10 @@ workflows:
     plan:
       steps:
         - run: terramate run --no-recursive --disable-safeguards=git -- terraform init -input=false
-        - run: terramate run --no-recursive --disable-safeguards=git -- terraform plan -input=false -out=$PLANFILE
+        - run: terramate run --no-recursive --disable-safeguards=git -- terraform plan -input=false -out="$PLANFILE"
     apply:
       steps:
-        - run: terramate run --no-recursive --disable-safeguards=git -- terraform apply $PLANFILE
+        - run: terramate run --no-recursive --disable-safeguards=git -- terraform apply "$PLANFILE"
 ```
 
 - **`--no-recursive`**: every stack is its own Atlantis project, so a parent stack must not also run its nested child stacks.

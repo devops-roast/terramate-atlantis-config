@@ -161,3 +161,29 @@ func TestGeneratedWorkflowPlanApplyWithTerraform(t *testing.T) {
 		})
 	}
 }
+
+// Atlantis runs a step with `sh -c` and puts the project dir in PLANFILE, so
+// an unquoted $PLANFILE splits a dir containing a space into two arguments.
+// A stand-in terramate prints the arguments it receives, one per line.
+func TestGeneratedWorkflowQuotesPlanfile(t *testing.T) {
+	root := newFixture(t)
+	res := run(t, "generate", "--root", root, "--no-header", "--generate-workflows")
+	require.Equal(t, 0, res.code, res.stderr)
+	cfg := parsed(t, res.stdout)
+
+	bin := t.TempDir()
+	writeFile(t, filepath.Join(bin, "terramate"), "#!/bin/sh\nfor a in \"$@\"; do printf '%s\\n' \"$a\"; done\n")
+	require.NoError(t, os.Chmod(filepath.Join(bin, "terramate"), 0o755))
+	planfile := filepath.Join(t.TempDir(), "my stack", "default.tfplan")
+	env := []string{"PATH=" + bin + string(os.PathListSeparator) + os.Getenv("PATH"), "PLANFILE=" + planfile}
+
+	out, err := shell(t, root, planRun(t, cfg, "terramate", 1), env...)
+	require.NoError(t, err, out)
+	assert.Contains(t, strings.Split(out, "\n"), "-out="+planfile)
+
+	wf := cfg.Workflows["terramate"].(map[string]interface{})
+	apply := wf["apply"].(map[string]interface{})["steps"].([]interface{})[0].(map[string]interface{})["run"].(string)
+	out, err = shell(t, root, apply, env...)
+	require.NoError(t, err, out)
+	assert.Contains(t, strings.Split(out, "\n"), planfile)
+}
