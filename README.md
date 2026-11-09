@@ -249,7 +249,7 @@ See [Workflows](#workflows) for how workflows are generated, assigned and merged
 
 **Other commands**
 
-- `terramate-atlantis-config validate atlantis.yaml` checks an existing file: `version: 3`, a `dir` for every project, valid and unique project names, every project that shares a dir and workspace with another one has a name, project dirs inside the repository (no `..`), and `depends_on` entries that name existing projects. A project whose workflow isn't defined in the file only gets a warning, since Atlantis also looks it up in the server-side repo config. Exits `1` on any error.
+- `terramate-atlantis-config validate atlantis.yaml` checks an existing file: `version: 3`, a `dir` for every project, valid and unique project names (and no `name: ""`), every project that shares a dir and workspace with another one has a name, no named project whose dir is a glob pattern (`*`, `?` or `[`), project dirs without `..` (Atlantis rejects it anywhere in a dir, even in `a..b`), and `depends_on` entries that name existing projects. A project whose workflow isn't defined in the file only gets a warning, since Atlantis also looks it up in the server-side repo config. Exits `1` on any error.
 - `terramate-atlantis-config version` prints the version, commit and build date.
 
 ### Per-stack globals

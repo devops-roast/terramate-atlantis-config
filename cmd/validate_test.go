@@ -1,8 +1,11 @@
 package cmd
 
 import (
+	"path/filepath"
 	"reflect"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 
 	"github.com/devops-roast/terramate-atlantis-config/internal/atlantis"
 )
@@ -37,9 +40,28 @@ func TestValidateConfig(t *testing.T) {
 					{Dir: "a..b"},
 				},
 			},
+			// Atlantis rejects any dir containing "..", even inside a name.
 			want: []string{
 				`projects[0]: dir "../a" must not contain '..'`,
 				`projects[1]: dir "a/../../b" must not contain '..'`,
+				`projects[2]: dir "a..b" must not contain '..'`,
+			},
+		},
+		{
+			// Atlantis expands a dir with '*', '?' or '[' as a glob, into
+			// several projects, which can't share one name.
+			name: "named project with a glob dir",
+			cfg: atlantis.Config{
+				Version: 3,
+				Projects: []atlantis.Project{
+					{Name: "prod", Dir: "envs/[prod]"},
+					{Name: "all", Dir: "envs/*"},
+					{Dir: "modules/*"},
+				},
+			},
+			want: []string{
+				`projects[0]: dir "envs/[prod]" is a glob pattern ('*', '?' or '['), so the project can't have a name`,
+				`projects[1]: dir "envs/*" is a glob pattern ('*', '?' or '['), so the project can't have a name`,
 			},
 		},
 		{
@@ -160,4 +182,20 @@ func TestValidateConfig(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Atlantis rejects `name: ""` ("if set cannot be empty"); an absent name is
+// fine. Both decode to "" in atlantis.Project, so the file itself is checked.
+func TestValidateRejectsExplicitEmptyName(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "atlantis.yaml")
+
+	writeFile(t, file, "version: 3\nprojects:\n  - dir: a\n  - name: \"\"\n    dir: b\n")
+	res := run(t, "validate", file)
+	assert.Equal(t, 1, res.code)
+	assert.Contains(t, res.stderr, "projects[1]: name must not be empty when it is set")
+
+	writeFile(t, file, "version: 3\nprojects:\n  - dir: a\n  - name: b\n    dir: b\n")
+	res = run(t, "validate", file)
+	assert.Equal(t, 0, res.code, res.stderr)
 }
