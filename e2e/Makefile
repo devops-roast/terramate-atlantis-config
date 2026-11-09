@@ -3,14 +3,18 @@ E2E_DIR      := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 PROJECT_ROOT := $(abspath $(E2E_DIR)/..)
 COMPOSE      := docker compose --project-directory $(E2E_DIR)
 
-export GITEA_URL         ?= http://localhost:3000
-export GITEA_ADMIN_USER  ?= e2e-admin
-export GITEA_ADMIN_PASS  ?= e2e-password-123
-export GITEA_ADMIN_EMAIL ?= admin@e2e.local
-export TEST_REPO         ?= e2e-test-repo
-export WEBHOOK_SECRET    ?= e2e-webhook-secret
-export ATLANTIS_URL      ?= http://localhost:4141
-export GITEA_CONTAINER   ?= e2e-gitea
+# Host ports of the Gitea and Atlantis containers (see docker-compose.yaml).
+# Set them when 3000 or 4141 is taken; the URLs follow.
+export GITEA_HOST_PORT    ?= 3000
+export ATLANTIS_HOST_PORT ?= 4141
+export GITEA_URL          ?= http://localhost:$(GITEA_HOST_PORT)
+export GITEA_ADMIN_USER   ?= e2e-admin
+export GITEA_ADMIN_PASS   ?= e2e-password-123
+export GITEA_ADMIN_EMAIL  ?= admin@e2e.local
+export TEST_REPO          ?= e2e-test-repo
+export WEBHOOK_SECRET     ?= e2e-webhook-secret
+export ATLANTIS_URL       ?= http://localhost:$(ATLANTIS_HOST_PORT)
+export GITEA_CONTAINER    ?= e2e-gitea
 
 GO_SRC := $(shell find $(PROJECT_ROOT)/cmd $(PROJECT_ROOT)/internal -name '*.go' 2>/dev/null)
 
