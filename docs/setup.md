@@ -223,6 +223,7 @@ Atlantis now generates `atlantis.yaml` in its checkout of every pull request. Th
 
 - `--root .` makes project dirs relative to the repository root that Atlantis checked out, which is what Atlantis expects.
 - With [generated workflows](workflows.md), the image also needs the `terramate` CLI and a `terraform` binary on `PATH`. The [e2e image](../e2e/Dockerfile.atlantis) installs both.
+- If you don't commit Terramate's generated code, a pull request that only changes a parent's globals or an imported file plans nothing by default. Run `terramate generate` in the hook too and turn on `--when-modified-from-config`. See [Generated code in Atlantis](autoplan.md#generated-code-in-atlantis).
 - `--changed` needs the base branch in Atlantis' checkout, which the default `branch` checkout strategy doesn't fetch. See [`--changed` in shallow clones](#--changed-in-shallow-clones).
 
 </details>

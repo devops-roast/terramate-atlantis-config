@@ -98,13 +98,14 @@ projects:
 
 Beyond the project list, the tool maps more Terramate concepts to Atlantis settings:
 
-| In Terramate             | In `atlantis.yaml`                                                     | Read more                                |
-| ------------------------ | ---------------------------------------------------------------------- | ---------------------------------------- |
-| a stack                  | a project with a `dir` and a `name`                                    | [Project naming](docs/project-naming.md) |
-| `atlantis_*` globals     | per-project workflow, autoplan, apply requirements, Terraform version | [Stack globals](docs/stack-globals.md)   |
-| tags, paths, git changes | which projects are included                                            | [Filtering](docs/filtering.md)           |
-| stack `after` / `before` | `depends_on` and `execution_order_group`                               | [Dependencies](docs/dependencies.md)     |
-| `terramate run`          | a generated `terramate` workflow                                       | [Workflows](docs/workflows.md)           |
+| In Terramate                             | In `atlantis.yaml`                                                    | Read more                                |
+| ---------------------------------------- | --------------------------------------------------------------------- | ---------------------------------------- |
+| a stack                                  | a project with a `dir` and a `name`                                   | [Project naming](docs/project-naming.md) |
+| `atlantis_*` globals                     | per-project workflow, autoplan, apply requirements, Terraform version | [Stack globals](docs/stack-globals.md)   |
+| tags, paths, git changes                 | which projects are included                                           | [Filtering](docs/filtering.md)           |
+| stack `after` / `before`                 | `depends_on` and `execution_order_group`                              | [Dependencies](docs/dependencies.md)     |
+| `terramate run`                          | a generated `terramate` workflow                                      | [Workflows](docs/workflows.md)           |
+| parent config, imports, modules, `watch` | `autoplan.when_modified`, with `--when-modified-from-config`          | [Autoplan](docs/autoplan.md)             |
 
 <p align="center"><sub><b>Table 1.</b> How Terramate concepts become Atlantis settings.</sub></p>
 
@@ -184,18 +185,19 @@ repos:
 
 ## Documentation
 
-| Page                                       | Read this when…                                                                     |
-| ------------------------------------------ | ----------------------------------------------------------------------------------- |
-| [Setup](docs/setup.md)                     | you wire the tool into pre-commit, GitHub Actions, another CI or Atlantis itself    |
-| [Configuration](docs/configuration.md)     | you look up a flag or a `.terramate-atlantis.yaml` key                              |
-| [Stack globals](docs/stack-globals.md)     | one stack needs a different workflow, Terraform version, autoplan or skip           |
-| [Filtering](docs/filtering.md)             | you want only some stacks: by tag, by path, or changed in a pull request            |
-| [Project naming](docs/project-naming.md)   | you want shorter or different project names                                         |
-| [Dependencies](docs/dependencies.md)       | stacks must plan and apply in order                                                 |
-| [Workflows](docs/workflows.md)             | Atlantis should run Terraform through `terramate run`, or you map tags to workflows |
-| [Commands](docs/commands.md)               | you check an existing `atlantis.yaml`, or need exit codes                           |
-| [Troubleshooting](docs/troubleshooting.md) | something fails or the output isn't what you expected                               |
-| [FAQ](docs/faq.md)                         | you have a "can it…" or "why does it…" question                                     |
+| Page                                       | Read this when…                                                                                 |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------------- |
+| [Setup](docs/setup.md)                     | you wire the tool into pre-commit, GitHub Actions, another CI or Atlantis itself                |
+| [Configuration](docs/configuration.md)     | you look up a flag or a `.terramate-atlantis.yaml` key                                          |
+| [Stack globals](docs/stack-globals.md)     | one stack needs a different workflow, Terraform version, autoplan or skip                       |
+| [Filtering](docs/filtering.md)             | you want only some stacks: by tag, by path, or changed in a pull request                        |
+| [Project naming](docs/project-naming.md)   | you want shorter or different project names                                                     |
+| [Dependencies](docs/dependencies.md)       | stacks must plan and apply in order                                                             |
+| [Workflows](docs/workflows.md)             | Atlantis should run Terraform through `terramate run`, or you map tags to workflows             |
+| [Autoplan](docs/autoplan.md)               | a change to a parent's globals, an imported file or a module should plan the stacks that use it |
+| [Commands](docs/commands.md)               | you check an existing `atlantis.yaml`, or need exit codes                                       |
+| [Troubleshooting](docs/troubleshooting.md) | something fails or the output isn't what you expected                                           |
+| [FAQ](docs/faq.md)                         | you have a "can it…" or "why does it…" question                                                 |
 
 <p align="center"><sub><b>Table 4.</b> Where to find each topic.</sub></p>
 

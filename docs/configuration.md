@@ -91,6 +91,7 @@ Every key matches a `generate` flag:
 | `workflow`                    | string                    | `--workflow`                    |
 | `terraform_version`           | string                    | `--terraform-version`           |
 | `when_modified`               | list(string)              | `--when-modified`               |
+| `when_modified_from_config`   | bool                      | `--when-modified-from-config`   |
 | `apply_requirements`          | list(string)              | `--apply-requirements`          |
 | `tag_workflows`               | map(string)               | `--tag-workflow`                |
 | `tag_requirements`            | map(list(string))         | `--tag-requirements`            |
@@ -179,6 +180,7 @@ See [Filtering](filtering.md) for tag filters, glob rules, and how filters combi
 | `--workflow`                |                                        | Default workflow name for all projects                              |
 | `--terraform-version`       |                                        | Default Terraform version for all projects                          |
 | `--when-modified`           | `*.tf, *.tf.json, .terraform.lock.hcl` | File patterns that trigger autoplan                                 |
+| `--when-modified-from-config` | `false`                              | Also trigger autoplan on the files each stack depends on: parent Terramate config, imports, `watch` files, local modules. See [Autoplan](autoplan.md) |
 | `--apply-requirements`      |                                        | Default apply requirements                                          |
 | `--tag-workflow`            |                                        | Map stack tags to workflows: `tag=workflow`, comma-separated or repeated |
 | `--tag-requirements`        |                                        | Map a stack tag to apply requirements: `tag=req1,req2`, repeatable  |
