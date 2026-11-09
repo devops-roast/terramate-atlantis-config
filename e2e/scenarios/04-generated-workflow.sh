@@ -8,6 +8,9 @@
 # - A parent stack contains a nested child stack. Each is its own project, and
 #   the parent's project must not also run the child (--no-recursive): each
 #   resource is planned exactly once across the whole pull request.
+# - The init step discards Terraform's stdout, so a successful init adds no
+#   "- Installing ..." lines to the plan comment, while the refusal above (on
+#   stderr) still reaches it.
 
 scenario_run() {
 	new_branch generated-workflow
@@ -57,6 +60,7 @@ YAML
 	# With recursion the parent's plan would also contain the child's resource.
 	assert_comment_count '"e2e-tm-parent"' 1
 	assert_comment_count '"e2e-tm-child"' 1
+	assert_comment_not_contains "Terraform has been successfully initialized"
 	assert_no_errors
 
 	assert_generated_contains "$(
@@ -66,6 +70,7 @@ YAML
     workflow: terramate
 YAML
 	)"
+	assert_generated_contains 'run: terramate run --no-recursive --disable-safeguards=git -- terraform init -input=false > /dev/null'
 	# shellcheck disable=SC2016 # $PLANFILE is literal text in atlantis.yaml
 	assert_generated_contains 'run: terramate run --no-recursive --disable-safeguards=git -- terraform plan -input=false -out="$PLANFILE"'
 

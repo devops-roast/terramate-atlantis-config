@@ -187,3 +187,32 @@ func TestGeneratedWorkflowQuotesPlanfile(t *testing.T) {
 	require.NoError(t, err, out)
 	assert.Contains(t, strings.Split(out, "\n"), planfile)
 }
+
+// Atlantis posts a run step's output in a diff block, so the generated init
+// step discards Terraform's stdout ("- Installing ..." lines render as
+// removals). Its errors go to stderr and must still reach the output.
+func TestGeneratedWorkflowInitOutputWithTerraform(t *testing.T) {
+	requireBinary(t, "terramate")
+	requireBinary(t, "terraform")
+	clone := atlantisLikeClone(t)
+
+	res := run(t, "generate", "--root", clone, "--no-header", "--generate-workflows")
+	require.Equal(t, 0, res.code, res.stderr)
+	initStep := planRun(t, parsed(t, res.stdout), "terramate", 0)
+
+	t.Run("success prints no terraform output", func(t *testing.T) {
+		out, err := shell(t, filepath.Join(clone, "parent"), initStep)
+		require.NoError(t, err, out)
+		assert.NotContains(t, out, "Terraform has been successfully initialized")
+		assert.NotContains(t, out, "Initializing")
+		assert.Contains(t, out, "terramate: Entering stack", "terramate's own stderr stays")
+	})
+
+	t.Run("failure keeps terraform errors", func(t *testing.T) {
+		child := filepath.Join(clone, "parent", "child")
+		writeFile(t, filepath.Join(child, "versions.tf"), "terraform {\n  required_version = \"< 0.1.0\"\n}\n")
+		out, err := shell(t, child, initStep)
+		require.Error(t, err, out)
+		assert.Contains(t, out, "Unsupported Terraform Core version")
+	})
+}

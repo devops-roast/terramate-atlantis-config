@@ -16,6 +16,15 @@ const GeneratedWorkflowName = "terramate"
 // checks under --no-recursive, so disabling all of "git" costs nothing.
 var DefaultDisableSafeguards = []string{"git"}
 
+// discardStdout is appended to the generated init step. Atlantis posts a run
+// step's whole output in a ```diff block, where GitHub colors every line that
+// starts with "-" red, and `terraform init` prints many such lines on success
+// ("- Installing hashicorp/random v3.9.1..."). Atlantis runs the step with
+// `sh -c`, so the redirect applies to the whole command, `terramate run`
+// included. Errors go to stderr and still reach the comment, unlike with the
+// step's `output: hide`, which also drops them from a failed step's error.
+const discardStdout = " > /dev/null"
+
 // ValidSafeguardKeywords are the keywords accepted by
 // `terramate run --disable-safeguards`.
 var ValidSafeguardKeywords = []string{
@@ -60,7 +69,7 @@ func GenerateWorkflows(opts WorkflowOptions) map[string]interface{} {
 		GeneratedWorkflowName: map[string]interface{}{
 			"plan": map[string]interface{}{
 				"steps": []interface{}{
-					map[string]interface{}{"run": cmd("init", "-input=false")},
+					map[string]interface{}{"run": cmd("init", "-input=false") + discardStdout},
 					map[string]interface{}{"run": cmd("plan", "-input=false", `-out="$PLANFILE"`)},
 				},
 			},

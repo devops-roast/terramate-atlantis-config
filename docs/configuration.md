@@ -33,7 +33,7 @@ workflows:
   prod-workflow:
     plan:
       steps:
-        - run: terramate run --no-recursive --disable-safeguards=git -- terraform init -input=false
+        - run: terramate run --no-recursive --disable-safeguards=git -- terraform init -input=false > /dev/null
         - run: terramate run --no-recursive --disable-safeguards=git -- terraform plan -input=false -out="$PLANFILE"
     apply:
       steps:
