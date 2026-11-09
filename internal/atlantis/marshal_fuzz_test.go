@@ -75,6 +75,21 @@ func FuzzMarshalYAMLSurvivesTextFixers(f *testing.F) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		// Project fields hold values from globals (atlantis_workflow,
+		// atlantis_when_modified, ...) and directory names, which can be
+		// any string too.
+		project := Project{
+			Name:              "p",
+			Dir:               "d" + value,
+			Workflow:          value,
+			TerraformVersion:  value,
+			Autoplan:          Autoplan{Enabled: true, WhenModified: []string{value, "x"}},
+			ApplyRequirements: &[]string{value},
+		}
+		if value != "" {
+			project.DependsOn = []string{value}
+		}
+		cfg.Projects = append(cfg.Projects, project)
 		cfg.Workflows = map[string]any{
 			"a": map[string]any{"plan": map[string]any{"steps": []any{
 				map[string]any{"run": value},
@@ -93,6 +108,9 @@ func FuzzMarshalYAMLSurvivesTextFixers(f *testing.F) {
 		var back Config
 		if err := yaml.Unmarshal(out, &back); err != nil {
 			t.Fatalf("output does not parse: %v\n%s", err, out)
+		}
+		if !reflect.DeepEqual(back.Projects, cfg.Projects) {
+			t.Fatalf("round trip changed projects for %q:\n%s", value, out)
 		}
 		if !reflect.DeepEqual(back.Workflows, cfg.Workflows) {
 			t.Fatalf("round trip changed %q:\n%s", value, out)
