@@ -34,7 +34,7 @@ func runValidate(cmd *cobra.Command, args []string) error {
 
 	var cfg atlantis.Config
 	if err := yaml.Unmarshal(content, &cfg); err != nil {
-		return fmt.Errorf("invalid YAML syntax: %w", err)
+		return fmt.Errorf("parsing %s: %w", args[0], err)
 	}
 
 	for _, warning := range workflowWarnings(cfg) {
@@ -44,7 +44,7 @@ func runValidate(cmd *cobra.Command, args []string) error {
 	errors := validateConfig(cfg)
 	emptyNames, err := explicitEmptyNames(content)
 	if err != nil {
-		return fmt.Errorf("invalid YAML syntax: %w", err)
+		return fmt.Errorf("parsing %s: %w", args[0], err)
 	}
 	errors = append(errors, emptyNames...)
 	if len(errors) > 0 {

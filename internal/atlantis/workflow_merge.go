@@ -11,9 +11,9 @@ import (
 type WorkflowSource string
 
 const (
-	SourcePreserved WorkflowSource = "existing output file"
+	SourcePreserved WorkflowSource = "the existing output file"
 	SourceGenerated WorkflowSource = "--generate-workflows"
-	SourceConfig    WorkflowSource = "config file"
+	SourceConfig    WorkflowSource = "the config file"
 )
 
 type WorkflowLayer struct {

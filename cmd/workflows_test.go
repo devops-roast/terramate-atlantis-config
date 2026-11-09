@@ -227,7 +227,7 @@ projects: []
 		cfg := read(t, out)
 		assert.ElementsMatch(t, []string{"terramate", "custom"}, keys(cfg.Workflows))
 		assert.Equal(t, "my own", planRun(t, cfg, "terramate", 0))
-		assert.Contains(t, res.stderr, `Warning: workflow "terramate" from the config file overrides the one from the --generate-workflows`)
+		assert.Contains(t, res.stderr, `Warning: workflow "terramate" from the config file overrides the one from --generate-workflows`)
 	})
 
 	t.Run("without preserve existing workflows are dropped", func(t *testing.T) {

@@ -562,6 +562,10 @@ func TestConfigTagMappingErrorsNameConfigKey(t *testing.T) {
 		"tag_workflows:\n  prod: \"\"\n":   `tag_workflows: tag "prod" has no workflow`,
 		"tag_workflows:\n  \" \": wf\n":    `tag_workflows: empty tag`,
 		"tag_requirements:\n  \"\": [a]\n": `tag_requirements: empty tag`,
+		// A mapping is passed on as tag=value, so "x=y" would turn into tag
+		// "x" with workflow "y=wf".
+		"tag_workflows:\n  x=y: wf\n":    `tag_workflows: tag "x=y" contains '='`,
+		"tag_requirements:\n  x=y: [a]\n": `tag_requirements: tag "x=y" contains '='`,
 	} {
 		writeFile(t, filepath.Join(root, ".terramate-atlantis.yaml"), content)
 		res := run(t, "generate", "--root", root)
@@ -569,4 +573,27 @@ func TestConfigTagMappingErrorsNameConfigKey(t *testing.T) {
 		assert.Contains(t, res.stderr, "config file "+want, content)
 		assert.NotContains(t, res.stderr, "--tag-", content)
 	}
+}
+
+// The summary line agrees in number with the project count.
+func TestGenerateSummaryForOneProject(t *testing.T) {
+	root := newFixture(t)
+	out := filepath.Join(t.TempDir(), "atlantis.yaml")
+
+	res := generateTo(t, root, out, "--filter-path", "stacks/dev")
+
+	require.Equal(t, 0, res.code, res.stderr)
+	assert.Equal(t, "Generated "+out+" with 1 project\n", res.stderr)
+}
+
+// A value of the wrong type is not a syntax error.
+func TestValidateReportsTypeErrorsAsParseErrors(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "atlantis.yaml")
+	writeFile(t, path, "version: three\n")
+
+	res := run(t, "validate", path)
+
+	assert.Equal(t, 1, res.code)
+	assert.Contains(t, res.stderr, "Error: parsing "+path+": ")
+	assert.NotContains(t, res.stderr, "syntax")
 }

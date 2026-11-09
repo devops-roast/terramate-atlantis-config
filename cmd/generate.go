@@ -306,7 +306,11 @@ func runGenerate(cmd *cobra.Command, opts *GenerateOptions) error {
 		return fmt.Errorf("writing output file: %w", err)
 	}
 
-	fmt.Fprintf(stderr, "Generated %s with %d projects\n", opts.Output, len(cfg.Projects))
+	noun := "projects"
+	if len(cfg.Projects) == 1 {
+		noun = "project"
+	}
+	fmt.Fprintf(stderr, "Generated %s with %d %s\n", opts.Output, len(cfg.Projects), noun)
 	return nil
 }
 
@@ -355,7 +359,7 @@ func buildWorkflows(opts *GenerateOptions, warnf func(string, ...any)) (map[stri
 		if o.Replaced == atlantis.SourcePreserved && reflect.DeepEqual(preserved[o.Name], merged[o.Name]) {
 			continue
 		}
-		warnf("workflow %q from the %s overrides the one from the %s", o.Name, o.Winner, o.Replaced)
+		warnf("workflow %q from %s overrides the one from %s", o.Name, o.Winner, o.Replaced)
 	}
 	return merged, nil
 }
@@ -491,6 +495,8 @@ func mergeConfig(cmd *cobra.Command, opts *GenerateOptions, cfg *internalconfig.
 			switch {
 			case strings.TrimSpace(tag) == "":
 				return fmt.Errorf("config file tag_workflows: empty tag")
+			case strings.Contains(tag, "="):
+				return fmt.Errorf("config file tag_workflows: tag %q contains '='", tag)
 			case workflow == "":
 				return fmt.Errorf("config file tag_workflows: tag %q has no workflow", tag)
 			}
@@ -509,6 +515,8 @@ func mergeConfig(cmd *cobra.Command, opts *GenerateOptions, cfg *internalconfig.
 			switch {
 			case strings.TrimSpace(tag) == "":
 				return fmt.Errorf("config file tag_requirements: empty tag")
+			case strings.Contains(tag, "="):
+				return fmt.Errorf("config file tag_requirements: tag %q contains '='", tag)
 			case len(cfg.TagRequirements[tag]) == 0:
 				return fmt.Errorf("config file tag_requirements: tag %q has no requirements", tag)
 			}
