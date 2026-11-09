@@ -67,7 +67,7 @@ YAML
 YAML
 	)"
 	# shellcheck disable=SC2016 # $PLANFILE is literal text in atlantis.yaml
-	assert_generated_contains 'run: terramate run --no-recursive --disable-safeguards=git -- terraform plan -input=false -out=$PLANFILE'
+	assert_generated_contains 'run: terramate run --no-recursive --disable-safeguards=git -- terraform plan -input=false -out="$PLANFILE"'
 
 	comment "atlantis apply"
 	wait_for_comment 'Ran Apply|Error'

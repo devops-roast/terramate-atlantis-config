@@ -30,6 +30,14 @@ inputs:
     description: Run in check mode (fail if the output file is out of date)
     required: false
     default: "false"
+  token:
+    description: >-
+      GitHub token for looking up and downloading the release through the
+      GitHub API. Authenticated requests aren't subject to the limits and
+      timeouts of anonymous downloads. Only used on github.com; set it to an
+      empty string to download anonymously.
+    required: false
+    default: ${{ github.token }}
 
 outputs:
   projects:
@@ -47,9 +55,24 @@ runs:
       shell: bash
       env:
         VERSION: ${{ inputs.version }}
+        TOKEN: ${{ inputs.token }}
         REPO: devops-roast/terramate-atlantis-config
       run: |
         set -euo pipefail
+
+        # Retry transient failures (such as 5xx from github.com).
+        fetch() { curl -fsSL --retry 5 --retry-delay 2 --retry-all-errors "$@"; }
+
+        # The default token belongs to the workflow's GitHub instance; send it
+        # only to github.com, where the release lives. Asset IDs are read with
+        # jq, so without it the release is downloaded anonymously.
+        auth=()
+        if [ -n "$TOKEN" ] && [ "${GITHUB_SERVER_URL:-https://github.com}" = "https://github.com" ] &&
+          command -v jq >/dev/null; then
+          auth=(-H "Authorization: Bearer ${TOKEN}")
+        fi
+        api="https://api.github.com/repos/${REPO}"
+        api_get() { fetch -H "Accept: application/vnd.github+json" "${auth[@]}" "$@"; }
 
         case "$RUNNER_OS" in
           Linux) os=linux ;;
@@ -67,9 +90,17 @@ runs:
         mkdir -p "$bin_dir"
 
         if [ "$VERSION" = "latest" ]; then
-          # github.com/<repo>/releases/latest redirects to .../releases/tag/<tag>.
-          latest_url=$(curl -fsSL -o /dev/null -w '%{url_effective}' "https://github.com/${REPO}/releases/latest")
-          VERSION="${latest_url##*/}"
+          if [ ${#auth[@]} -gt 0 ]; then
+            VERSION=$(api_get "${api}/releases/latest" | jq -r '.tag_name // empty')
+            if [ -z "$VERSION" ]; then
+              echo "::error::could not find the latest release of ${REPO}"
+              exit 1
+            fi
+          else
+            # github.com/<repo>/releases/latest redirects to .../releases/tag/<tag>.
+            latest_url=$(fetch -o /dev/null -w '%{url_effective}' "https://github.com/${REPO}/releases/latest")
+            VERSION="${latest_url##*/}"
+          fi
         fi
 
         if [[ "$VERSION" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -80,8 +111,20 @@ runs:
           base_url="https://github.com/${REPO}/releases/download/${tag}"
 
           tmp=$(mktemp -d)
-          curl -fsSL -o "${tmp}/${archive}" "${base_url}/${archive}"
-          curl -fsSL -o "${tmp}/checksums.txt" "${base_url}/checksums.txt"
+          if [ ${#auth[@]} -gt 0 ]; then
+            release=$(api_get "${api}/releases/tags/${tag}")
+            for name in "$archive" checksums.txt; do
+              id=$(jq -r --arg name "$name" '.assets[] | select(.name == $name) | .id' <<<"$release")
+              if [ -z "$id" ]; then
+                echo "::error::release ${tag} has no asset ${name}"
+                exit 1
+              fi
+              fetch -H "Accept: application/octet-stream" "${auth[@]}" -o "${tmp}/${name}" "${api}/releases/assets/${id}"
+            done
+          else
+            fetch -o "${tmp}/${archive}" "${base_url}/${archive}"
+            fetch -o "${tmp}/checksums.txt" "${base_url}/checksums.txt"
+          fi
           (
             cd "$tmp"
             grep " ${archive}\$" checksums.txt >expected.txt || {

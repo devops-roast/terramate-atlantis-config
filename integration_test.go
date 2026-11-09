@@ -484,3 +484,20 @@ func TestCLIOrderWarningsLoggedOnce(t *testing.T) {
 	require.Equal(t, 0, res.exitCode, res.stderr)
 	require.Equal(t, 1, strings.Count(res.stderr, "does-not-exist not found"), res.stderr)
 }
+
+// e2e/scripts/lib.sh runs under `set -euo pipefail`: assert_comment_count
+// with an expected count of 0 used to abort silently, because grep exits 1
+// when nothing matches.
+func TestE2ELibAssertCommentCount(t *testing.T) {
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("bash not found")
+	}
+	assertCount := func(text, n string) error {
+		script := `set -euo pipefail; source e2e/scripts/lib.sh; LAST_COMMENT="hello world, hello"; assert_comment_count "$1" "$2"`
+		return exec.Command("bash", "-c", script, "bash", text, n).Run()
+	}
+	require.NoError(t, assertCount("nothere", "0"))
+	require.NoError(t, assertCount("hello", "2"))
+	require.Error(t, assertCount("hello", "0"))
+	require.Error(t, assertCount("nothere", "1"))
+}

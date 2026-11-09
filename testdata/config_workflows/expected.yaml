@@ -56,8 +56,8 @@ workflows:
   terramate:
     apply:
       steps:
-        - run: terramate run --no-recursive --disable-safeguards=git-out-of-sync,git-untracked -- terraform apply $PLANFILE
+        - run: terramate run --no-recursive --disable-safeguards=git-out-of-sync,git-untracked -- terraform apply "$PLANFILE"
     plan:
       steps:
         - run: terramate run --no-recursive --disable-safeguards=git-out-of-sync,git-untracked -- terraform init -input=false
-        - run: terramate run --no-recursive --disable-safeguards=git-out-of-sync,git-untracked -- terraform plan -input=false -out=$PLANFILE
+        - run: terramate run --no-recursive --disable-safeguards=git-out-of-sync,git-untracked -- terraform plan -input=false -out="$PLANFILE"

@@ -37,10 +37,18 @@ var KnownGlobals = []string{
 func ExtractAtlantisGlobals(globals map[string]cty.Value) (AtlantisOverrides, error) {
 	var overrides AtlantisOverrides
 
-	for key, val := range globals {
-		if !strings.HasPrefix(key, "atlantis_") {
-			continue
+	// Sorted, so that with several invalid globals the same one is always
+	// reported.
+	keys := make([]string, 0, len(globals))
+	for key := range globals {
+		if strings.HasPrefix(key, "atlantis_") {
+			keys = append(keys, key)
 		}
+	}
+	sort.Strings(keys)
+
+	for _, key := range keys {
+		val := globals[key]
 		// A null value (e.g. from `cond ? [...] : null`) means "not set";
 		// cty panics on most accessors for null values.
 		if val.IsNull() {
@@ -92,7 +100,6 @@ func ExtractAtlantisGlobals(globals map[string]cty.Value) (AtlantisOverrides, er
 		}
 	}
 
-	sort.Strings(overrides.UnknownKeys)
 	return overrides, nil
 }
 

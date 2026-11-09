@@ -47,8 +47,9 @@ type StackInfo struct {
 
 	// AfterDirs and BeforeDirs are the stack.after/stack.before entries
 	// resolved to stack directories (same format as Dir), following
-	// Terramate's own ordering semantics: "tag:" queries expand to every
-	// matching stack, and a path expands to every stack at or below it.
+	// Terramate's own ordering semantics: a path expands to every stack at
+	// or below it, and a "tag:" query to every stack at or below the
+	// matching stacks.
 	AfterDirs  []string
 	BeforeDirs []string
 
@@ -79,6 +80,15 @@ func Discover(opts DiscoverOptions) (Result, error) {
 	rootDir := opts.RootDir
 	if rootDir == "" {
 		rootDir = "."
+	}
+
+	for _, pattern := range []struct{ flag, value string }{
+		{"path filter", opts.PathFilter},
+		{"exclude path filter", opts.ExcludePath},
+	} {
+		if err := checkPathPattern(pattern.value); err != nil {
+			return Result{}, fmt.Errorf("%s %q: %w", pattern.flag, pattern.value, err)
+		}
 	}
 
 	absRootDir, err := filepath.Abs(rootDir)
@@ -332,10 +342,10 @@ func resolveOrder(root *config.Root, stack *config.Stack) stackOrder {
 }
 
 // resolveOrderEntries resolves stack.after / stack.before entries to stack
-// directories the same way `terramate run` orders stacks: "tag:<filter>"
-// entries select every stack matching the tag filter, and path entries
+// directories the same way `terramate run` orders stacks: path entries
 // (relative to the stack, or absolute from the project root) select every
-// stack at or below that directory. The stack itself is never included.
+// stack at or below that directory, and "tag:<filter>" entries select every
+// stack at or below the stacks matching the tag filter. The stack itself is never included.
 // Paths that don't exist are ignored, as Terramate does.
 func resolveOrderEntries(root *config.Root, stack *config.Stack, entries []string) ([]string, error) {
 	if len(entries) == 0 {
@@ -346,20 +356,25 @@ func resolveOrderEntries(root *config.Root, stack *config.Stack, entries []strin
 	resolved := map[string]struct{}{}
 
 	for _, entry := range entries {
+		paths := []string{entry}
 		if filter, ok := strings.CutPrefix(entry, "tag:"); ok {
-			paths, err := root.StacksByTagsFilters([]string{filter})
+			// Like `terramate run`, a tag query selects the matching
+			// stacks' dirs, which then expand like any path entry: to the
+			// matching stacks and every stack nested below them.
+			tagged, err := root.StacksByTagsFilters([]string{filter})
 			if err != nil {
 				return nil, fmt.Errorf("invalid order entry %q: %w", entry, err)
 			}
-			for _, p := range paths {
-				if p.String() != self {
-					resolved[normalizeStackPath(p.String())] = struct{}{}
-				}
+			paths = paths[:0]
+			for _, p := range tagged {
+				paths = append(paths, p.String())
 			}
-			continue
+			if len(paths) == 0 {
+				continue
+			}
 		}
 
-		for _, tree := range root.StacksByPaths(stack.Dir, entry) {
+		for _, tree := range root.StacksByPaths(stack.Dir, paths...) {
 			if dir := tree.Dir().String(); dir != self {
 				resolved[normalizeStackPath(dir)] = struct{}{}
 			}
@@ -377,7 +392,7 @@ func resolveOrderEntries(root *config.Root, stack *config.Stack, entries []strin
 // normalizeStackPath converts a Terramate project path ("/a/b", "/") into
 // the Dir format used by StackInfo ("a/b", ".").
 func normalizeStackPath(p string) string {
-	normalized := filepath.ToSlash(strings.TrimPrefix(strings.TrimSpace(p), "/"))
+	normalized := filepath.ToSlash(strings.TrimPrefix(p, "/"))
 	if normalized == "" {
 		return RootDir
 	}
@@ -437,6 +452,15 @@ func matchesPathFilter(pattern, stackDir string) (bool, error) {
 	}
 
 	normalizedDir := filepath.ToSlash(strings.TrimPrefix(stackDir, "/"))
+	if normalizedDir == RootDir {
+		// "." is a placeholder for the root, not a directory named ".":
+		// only the pattern "." or one matching the empty path ("**")
+		// selects the root stack. Otherwise ".*" or "?" would match it.
+		if normalizedPattern == RootDir {
+			return true, nil
+		}
+		normalizedDir = ""
+	}
 	if !strings.Contains(normalizedPattern, "**") {
 		return path.Match(normalizedPattern, normalizedDir)
 	}
@@ -462,6 +486,17 @@ func normalizePathPattern(pattern string) string {
 		return ""
 	}
 	return strings.TrimPrefix(path.Clean(p), "/")
+}
+
+// checkPathPattern rejects a path filter that leads out of the root, such
+// as "../infra": stack dirs are relative to the root, so it could never
+// match one, and path.Clean would turn "/.." into "/", which matches all.
+func checkPathPattern(pattern string) error {
+	rel := path.Clean(strings.TrimLeft(filepath.ToSlash(pattern), "/"))
+	if rel == ".." || strings.HasPrefix(rel, "../") {
+		return fmt.Errorf("the pattern leads outside the root; path filters are relative to the root directory")
+	}
+	return nil
 }
 
 // globToRegexp translates a path glob containing "**" into a regular

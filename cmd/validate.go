@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path"
-	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -38,6 +37,11 @@ func runValidate(cmd *cobra.Command, args []string) error {
 	}
 
 	errors := validateConfig(cfg)
+	emptyNames, err := explicitEmptyNames(content)
+	if err != nil {
+		return fmt.Errorf("invalid YAML syntax: %w", err)
+	}
+	errors = append(errors, emptyNames...)
 	if len(errors) > 0 {
 		for _, validationErr := range errors {
 			fmt.Fprintln(cmd.ErrOrStderr(), validationErr)
@@ -65,9 +69,9 @@ func validateConfig(cfg atlantis.Config) []string {
 		switch {
 		case project.Dir == "":
 			issues = append(issues, fmt.Sprintf("projects[%d]: dir is required", i))
-		case hasDotDotSegment(project.Dir):
-			// Atlantis rejects dirs containing "..": a project must stay
-			// inside the repository.
+		case strings.Contains(project.Dir, ".."):
+			// Atlantis rejects any dir containing "..", not only a ".."
+			// segment, so a project stays inside the repository.
 			issues = append(issues, fmt.Sprintf("projects[%d]: dir %q must not contain '..'", i, project.Dir))
 		default:
 			workspace := project.Workspace
@@ -87,6 +91,13 @@ func validateConfig(cfg atlantis.Config) []string {
 				named = named && allNamed
 			}
 			allNamedByDirWorkspace[key] = named
+		}
+
+		// Atlantis expands a dir containing '*', '?' or '[' as a glob into
+		// several projects, which can't share one name.
+		if project.Name != "" && strings.ContainsAny(project.Dir, "*?[") {
+			issues = append(issues, fmt.Sprintf(
+				"projects[%d]: dir %q is a glob pattern ('*', '?' or '['), so the project can't have a name", i, project.Dir))
 		}
 
 		if project.Name != "" {
@@ -141,13 +152,25 @@ func workflowWarnings(cfg atlantis.Config) []string {
 	return warnings
 }
 
-func hasDotDotSegment(dir string) bool {
-	for _, segment := range strings.Split(filepath.ToSlash(dir), "/") {
-		if segment == ".." {
-			return true
+// explicitEmptyNames reports projects with `name: ""`, which Atlantis
+// rejects ("if set cannot be empty"). atlantis.Project can't tell it apart
+// from a project without a name, so the file is decoded again.
+func explicitEmptyNames(content []byte) ([]string, error) {
+	var names struct {
+		Projects []struct {
+			Name *string `yaml:"name"`
+		} `yaml:"projects"`
+	}
+	if err := yaml.Unmarshal(content, &names); err != nil {
+		return nil, err
+	}
+	var issues []string
+	for i, project := range names.Projects {
+		if project.Name != nil && *project.Name == "" {
+			issues = append(issues, fmt.Sprintf("projects[%d]: name must not be empty when it is set", i))
 		}
 	}
-	return false
+	return issues, nil
 }
 
 func projectRef(project atlantis.Project) string {

@@ -125,7 +125,60 @@ func TestPathFilterNormalizationAndWildcards(t *testing.T) {
 		}
 	}
 
+	// The root stack's dir "." is a placeholder, not a directory named ".":
+	// only "." itself (or a pattern matching the empty path, such as "**")
+	// selects it, so excluding hidden dirs with ".*" keeps the root stack.
+	for _, tc := range []struct {
+		pattern string
+		want    bool
+	}{
+		{".", true}, {"./", true}, {"**", true}, {"**/*", true},
+		{".*", false}, {"?", false}, {"[.]", false}, {"**/.*", false}, {"\\.", false},
+	} {
+		got, err := matchesPathOrParent(tc.pattern, RootDir)
+		if err != nil {
+			t.Fatalf("matchesPathOrParent(%q, root): %v", tc.pattern, err)
+		}
+		if got != tc.want {
+			t.Errorf("matchesPathOrParent(%q, root) = %v, want %v", tc.pattern, got, tc.want)
+		}
+	}
+
 	if _, err := matchesPathFilter("**/[a", "x"); err == nil {
 		t.Errorf("malformed class in a ** pattern must be an error, as it is without **")
 	}
+}
+
+// FuzzPathFilterSpellingsAreEquivalent checks the README's claim that
+// "infra", "/infra", "./infra" and "infra/" are the same filter.
+func FuzzPathFilterSpellingsAreEquivalent(f *testing.F) {
+	for _, seed := range [][2]string{
+		{"infra", "infra/vpc"}, {"*/vpc", "a/vpc/b"}, {"**/vpc", "vpc"}, {"a/**", "a"}, {".", "."}, {"*", "."},
+		{"[a-c]*", "b/x"}, {"a//b", "a/b"},
+	} {
+		f.Add(seed[0], seed[1])
+	}
+
+	f.Fuzz(func(t *testing.T, pattern, dir string) {
+		dir = strings.Trim(path.Clean("/"+dir), "/")
+		if dir == "" {
+			dir = RootDir
+		}
+		if pattern == "" || strings.HasPrefix(pattern, "/") || strings.HasPrefix(pattern, "./") ||
+			strings.HasSuffix(pattern, "/") || strings.Contains(pattern, `\`) {
+			t.Skip()
+		}
+		// "." (the root stack only) and "/" (no filter) differ on purpose,
+		// and Discover rejects patterns that lead out of the root.
+		if normalizePathPattern(pattern) == "." || checkPathPattern(pattern) != nil {
+			t.Skip()
+		}
+		want, wantErr := matchesPathOrParent(pattern, dir)
+		for _, spelling := range []string{"/" + pattern, "./" + pattern, pattern + "/"} {
+			got, err := matchesPathOrParent(spelling, dir)
+			if (err != nil) != (wantErr != nil) || got != want {
+				t.Fatalf("%q on %q: got (%v, %v), %q gives (%v, %v)", spelling, dir, got, err, pattern, want, wantErr)
+			}
+		}
+	})
 }

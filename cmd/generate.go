@@ -119,7 +119,7 @@ supported via Terramate globals (atlantis_skip, atlantis_workflow, etc).`,
 	flags.BoolVar(&opts.ExecutionOrderGroups, "execution-order-groups", false, "Populate execution_order_group based on stack dependencies")
 	flags.BoolVar(&opts.DependsOn, "depends-on", false, "Populate depends_on from stack after/before dependencies")
 	flags.StringVar(&opts.ProjectNameStrategy, "project-name-strategy", atlantis.NameStrategyAutoStrip, "Naming strategy: "+strings.Join(validNameStrategies, ", "))
-	flags.StringVar(&opts.ProjectNamePrefix, "project-name-prefix", "", "Strip this prefix from stack paths when generating names")
+	flags.StringVar(&opts.ProjectNamePrefix, "project-name-prefix", "", "Strip this prefix from stack paths when generating names (auto-strip and stack-name strategies)")
 	flags.IntVar(&opts.ProjectNameDepth, "project-name-depth", 3, "Number of trailing path segments for last-n strategy (at least 1)")
 	flags.StringSliceVar(&opts.WhenModified, "when-modified", []string{"*.tf", "*.tf.json", ".terraform.lock.hcl"}, "Default when_modified patterns")
 	flags.StringSliceVar(&opts.ApplyRequirements, "apply-requirements", nil, "Default apply_requirements entries")
@@ -133,11 +133,13 @@ supported via Terramate globals (atlantis_skip, atlantis_workflow, etc).`,
 // "--apply-requirements 'approved, mergeable'" means the same as the config
 // file list [approved, mergeable]. An empty list stays empty (not nil): it is
 // an explicit value, e.g. --workflow-disable-safeguards= keeps every
-// safeguard.
+// safeguard, and --tag-requirements= drops the config file's mappings.
 func normalizeGenerateOptions(opts *GenerateOptions) {
 	opts.WhenModified = cleanList(opts.WhenModified)
 	opts.ApplyRequirements = cleanList(opts.ApplyRequirements)
 	opts.WorkflowDisableSafeguards = cleanList(opts.WorkflowDisableSafeguards)
+	opts.TagWorkflow = cleanList(opts.TagWorkflow)
+	opts.TagRequirements = cleanList(opts.TagRequirements)
 }
 
 func cleanList(values []string) []string {
@@ -469,6 +471,9 @@ func mergeConfig(cmd *cobra.Command, opts *GenerateOptions, cfg *internalconfig.
 	if !cmd.Flags().Changed("apply-requirements") && cfg.ApplyRequirements != nil {
 		opts.ApplyRequirements = append([]string(nil), cfg.ApplyRequirements...)
 	}
+	// Tag mappings are validated here, while it is still known that they
+	// come from the config file: once in tag=value form, an error would name
+	// the flag instead.
 	if !cmd.Flags().Changed("tag-workflow") && len(cfg.TagWorkflows) > 0 {
 		tags := make([]string, 0, len(cfg.TagWorkflows))
 		for tag := range cfg.TagWorkflows {
@@ -478,7 +483,14 @@ func mergeConfig(cmd *cobra.Command, opts *GenerateOptions, cfg *internalconfig.
 
 		opts.TagWorkflow = make([]string, 0, len(tags))
 		for _, tag := range tags {
-			opts.TagWorkflow = append(opts.TagWorkflow, fmt.Sprintf("%s=%s", tag, cfg.TagWorkflows[tag]))
+			workflow := strings.TrimSpace(cfg.TagWorkflows[tag])
+			switch {
+			case strings.TrimSpace(tag) == "":
+				return fmt.Errorf("config file tag_workflows: empty tag")
+			case workflow == "":
+				return fmt.Errorf("config file tag_workflows: tag %q has no workflow", tag)
+			}
+			opts.TagWorkflow = append(opts.TagWorkflow, fmt.Sprintf("%s=%s", tag, workflow))
 		}
 	}
 	if !cmd.Flags().Changed("tag-requirements") && len(cfg.TagRequirements) > 0 {
@@ -490,6 +502,12 @@ func mergeConfig(cmd *cobra.Command, opts *GenerateOptions, cfg *internalconfig.
 
 		opts.TagRequirements = make([]string, 0, len(tags))
 		for _, tag := range tags {
+			switch {
+			case strings.TrimSpace(tag) == "":
+				return fmt.Errorf("config file tag_requirements: empty tag")
+			case len(cfg.TagRequirements[tag]) == 0:
+				return fmt.Errorf("config file tag_requirements: tag %q has no requirements", tag)
+			}
 			opts.TagRequirements = append(opts.TagRequirements,
 				fmt.Sprintf("%s=%s", tag, strings.Join(cfg.TagRequirements[tag], ",")))
 		}
@@ -534,11 +552,12 @@ func mergeConfig(cmd *cobra.Command, opts *GenerateOptions, cfg *internalconfig.
 		opts.Format = cfg.Format
 	}
 
-	if len(cfg.Workflows) > 0 {
-		opts.ConfigWorkflows = make(map[string]interface{}, len(cfg.Workflows))
-		for name, workflow := range cfg.Workflows {
-			opts.ConfigWorkflows[name] = workflow
-		}
+	workflows, err := atlantis.WorkflowsValue(&cfg.Workflows)
+	if err != nil {
+		return fmt.Errorf("config file workflows: %w", err)
+	}
+	if len(workflows) > 0 {
+		opts.ConfigWorkflows = workflows
 	}
 
 	return nil

@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -221,6 +222,36 @@ func TestDiscoverResolvesOrderEntries(t *testing.T) {
 
 	if vpc := byDir["stacks/network/vpc"]; vpc.AfterDirs != nil || vpc.BeforeDirs != nil {
 		t.Fatalf("vpc has no ordering, got after=%#v before=%#v", vpc.AfterDirs, vpc.BeforeDirs)
+	}
+}
+
+// `terramate run` resolves a "tag:" entry to the matching stacks' dirs and
+// then, like any path entry, to every stack at or below them: a stack ordered
+// after "tag:network" also runs after the stacks nested in a network stack.
+func TestDiscoverTagOrderEntryIncludesNestedStacks(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "terramate.tm.hcl"), "terramate {}\n")
+	writeFile(t, filepath.Join(root, "net/vpc/stack.tm.hcl"), "stack {\n  tags = [\"network\"]\n}\n")
+	writeFile(t, filepath.Join(root, "net/vpc/subnet/stack.tm.hcl"), "stack {}\n")
+	writeFile(t, filepath.Join(root, "app/stack.tm.hcl"), "stack {\n  after = [\"tag:network\"]\n}\n")
+	writeFile(t, filepath.Join(root, "late/stack.tm.hcl"), "stack {\n  before = [\"tag:network\"]\n}\n")
+
+	result, err := Discover(DiscoverOptions{RootDir: root})
+	if err != nil {
+		t.Fatalf("discover failed: %v", err)
+	}
+	byDir := map[string]StackInfo{}
+	for _, s := range result.Stacks {
+		byDir[s.Dir] = s
+	}
+
+	if got := byDir["app"].AfterDirs; !equalStrings(got, []string{"net/vpc", "net/vpc/subnet"}) {
+		t.Errorf("app after tag:network: got %#v, want the tagged stack and the stack nested in it", got)
+	}
+	if got := byDir["late"].BeforeDirs; !equalStrings(got, []string{"net/vpc", "net/vpc/subnet"}) {
+		t.Errorf("late before tag:network: got %#v, want the tagged stack and the stack nested in it", got)
 	}
 }
 
@@ -521,5 +552,60 @@ func TestDiscoverExcludedStackWithInvalidGlobals(t *testing.T) {
 
 	if _, err := Discover(DiscoverOptions{RootDir: root}); err == nil {
 		t.Fatal("a selected stack with invalid globals must still fail")
+	}
+}
+
+// Path filters are relative to the root, so a pattern that leads out of it
+// can't match any stack: "../infra" or ".." used to select nothing (an empty
+// atlantis.yaml), and "/.." was read as "/", which selects everything.
+func TestDiscoverRejectsPathFiltersOutsideRoot(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "terramate.tm.hcl"), "terramate {}\n")
+	writeFile(t, filepath.Join(root, "infra/stack.tm.hcl"), "stack {}\n")
+
+	for _, pattern := range []string{"..", "../infra", "/..", "./../infra", "infra/../..", "/../*"} {
+		for _, opts := range []DiscoverOptions{
+			{RootDir: root, PathFilter: pattern},
+			{RootDir: root, ExcludePath: pattern},
+		} {
+			_, err := Discover(opts)
+			if err == nil || !strings.Contains(err.Error(), "outside the root") {
+				t.Errorf("Discover(filter %q, exclude %q): got %v, want an error about leaving the root",
+					opts.PathFilter, opts.ExcludePath, err)
+			}
+		}
+	}
+
+	// ".." segments that stay inside the root are fine.
+	result, err := Discover(DiscoverOptions{RootDir: root, PathFilter: "other/../infra"})
+	if err != nil || len(result.Stacks) != 1 {
+		t.Fatalf("filter other/../infra: got %d stacks, %v; want infra", len(result.Stacks), err)
+	}
+}
+
+// Whitespace is part of a directory name: a stack in "app " is not the stack
+// in "app". Trimming it made both stacks share the dir (and project name)
+// "app", which doesn't exist for one of them.
+func TestDiscoverKeepsWhitespaceInStackDirs(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "terramate.tm.hcl"), "terramate {}\n")
+	writeFile(t, filepath.Join(root, "app", "stack.tm.hcl"), "stack {}\n")
+	writeFile(t, filepath.Join(root, "app ", "stack.tm.hcl"), "stack {}\n")
+	writeFile(t, filepath.Join(root, " lead", "stack.tm.hcl"), "stack {}\n")
+
+	result, err := Discover(DiscoverOptions{RootDir: root})
+	if err != nil {
+		t.Fatalf("discover failed: %v", err)
+	}
+	var dirs []string
+	for _, s := range result.Stacks {
+		dirs = append(dirs, s.Dir)
+	}
+	if want := []string{" lead", "app", "app "}; !equalStrings(dirs, want) {
+		t.Fatalf("stack dirs: got %q, want %q", dirs, want)
 	}
 }

@@ -26,18 +26,21 @@ jobs:
       - name: Install terraform and terramate
         # Same pinned versions as e2e/Dockerfile.atlantis. cmd/terramate_cli_test.go
         # runs the generated workflow commands with these binaries.
+        # The terramate release is downloaded with gh and the workflow's
+        # token: anonymous github.com downloads can time out (HTTP 504).
         env:
           TERRAFORM_VERSION: 1.17.1
           TERRAMATE_VERSION: 0.17.3
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           tmp="$(mktemp -d)"
           cd "$tmp"
-          curl -fsSLO "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip"
-          curl -fsSLO "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_SHA256SUMS"
+          curl -fsSLO --retry 5 --retry-all-errors "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip"
+          curl -fsSLO --retry 5 --retry-all-errors "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_SHA256SUMS"
           grep " terraform_${TERRAFORM_VERSION}_linux_amd64.zip\$" "terraform_${TERRAFORM_VERSION}_SHA256SUMS" | sha256sum -c -
-          curl -fsSLO "https://github.com/terramate-io/terramate/releases/download/v${TERRAMATE_VERSION}/terramate_${TERRAMATE_VERSION}_linux_x86_64.tar.gz"
-          curl -fsSLO "https://github.com/terramate-io/terramate/releases/download/v${TERRAMATE_VERSION}/checksums.txt"
+          gh release download "v${TERRAMATE_VERSION}" --repo terramate-io/terramate \
+            --pattern "terramate_${TERRAMATE_VERSION}_linux_x86_64.tar.gz" --pattern checksums.txt
           grep " terramate_${TERRAMATE_VERSION}_linux_x86_64.tar.gz\$" checksums.txt | sha256sum -c -
           mkdir -p "$HOME/.local/bin"
           unzip -q -o "terraform_${TERRAFORM_VERSION}_linux_amd64.zip" terraform -d "$HOME/.local/bin"
