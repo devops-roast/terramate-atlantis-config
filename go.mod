@@ -6,6 +6,7 @@ require (
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2
 	github.com/rs/zerolog v1.28.0
 	github.com/spf13/cobra v1.10.2
+	github.com/spf13/pflag v1.0.10
 	github.com/stretchr/testify v1.11.1
 	github.com/terramate-io/terramate v0.16.0
 	github.com/zclconf/go-cty v1.18.0
@@ -169,7 +170,6 @@ require (
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/spf13/afero v1.15.0 // indirect
 	github.com/spf13/cast v1.10.0 // indirect
-	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/spiffe/go-spiffe/v2 v2.6.0 // indirect
 	github.com/terramate-io/hcl/v2 v2.0.0-rc6 // indirect
 	github.com/terramate-io/opentofulib v1.0.1 // indirect
