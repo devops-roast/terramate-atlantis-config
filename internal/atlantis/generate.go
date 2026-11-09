@@ -404,7 +404,6 @@ func MarshalJSON(cfg Config) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// copyToPtr returns a pointer to a non-nil copy of s.
 func copyToPtr(s []string) *[]string {
 	c := append([]string{}, s...)
 	return &c
@@ -455,6 +454,8 @@ func buildDependencies(stacks, all []discovery.StackInfo, projectByDir map[strin
 		}
 		after[dir][dep] = struct{}{}
 	}
+	// all can be nil (Options.AllStacks defaults to the stacks passed in),
+	// and stacks may hold entries missing from it, so read both.
 	for _, list := range [][]discovery.StackInfo{all, stacks} {
 		for _, stack := range list {
 			dir := stackDir(stack.Dir)

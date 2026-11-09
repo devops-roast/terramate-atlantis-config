@@ -127,7 +127,7 @@ func TestPathFilterNormalizationAndWildcards(t *testing.T) {
 
 	// The root stack's dir "." is a placeholder, not a directory named ".":
 	// only "." itself (or a pattern matching the empty path, such as "**")
-	// selects it, so excluding hidden dirs with ".*" keeps the root stack.
+	// selects it, not ".*" or "?".
 	for _, tc := range []struct {
 		pattern string
 		want    bool

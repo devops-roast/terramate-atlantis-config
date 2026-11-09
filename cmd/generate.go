@@ -481,7 +481,7 @@ func mergeConfig(cmd *cobra.Command, opts *GenerateOptions, cfg *internalconfig.
 	}
 	// Tag mappings are validated here, while it is still known that they
 	// come from the config file: once in tag=value form, an error would name
-	// the flag instead.
+	// the flag instead, and a tag containing '=' would be split wrongly.
 	if !cmd.Flags().Changed("tag-workflow") && len(cfg.TagWorkflows) > 0 {
 		tags := make([]string, 0, len(cfg.TagWorkflows))
 		for tag := range cfg.TagWorkflows {

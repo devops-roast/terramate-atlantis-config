@@ -45,8 +45,9 @@ type FileConfig struct {
 	GenerateWorkflows         *bool                 `yaml:"generate_workflows"`
 	WorkflowTerramateWrap     *bool                 `yaml:"workflow_terramate_wrap"`
 	WorkflowDisableSafeguards *StringList           `yaml:"workflow_disable_safeguards"`
-	// Workflows is kept as a YAML node so its values can be written back
-	// exactly as they are in the file.
+	// Workflows is kept as a YAML node so scalars keep the text and type
+	// they have in the file (see atlantis.WorkflowsValue). Key order,
+	// comments and anchors are not kept.
 	Workflows           yaml.Node `yaml:"workflows"`
 	SortBy              string    `yaml:"sort_by"`
 	ProjectNameStrategy string    `yaml:"project_name_strategy"`

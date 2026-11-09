@@ -148,8 +148,7 @@ comment() {
 
 # wait_for_comment REGEX [TIMEOUT]: wait for a new comment not written by the
 # scenario whose body matches the extended REGEX. Sets LAST_COMMENT.
-# Atlantis uses the same Gitea account as the scenario, so comments are told
-# apart by id rather than author.
+# The scenario's own comments (see comment) are skipped by id.
 wait_for_comment() {
 	local regex="$1" timeout="${2:-$ATLANTIS_TIMEOUT}" elapsed=0 comments ids id body
 	while [ "$elapsed" -lt "$timeout" ]; do

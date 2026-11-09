@@ -31,7 +31,7 @@ func TestValidateConfig(t *testing.T) {
 			want: []string{},
 		},
 		{
-			name: "dirs outside the repository",
+			name: "dirs containing '..'",
 			cfg: atlantis.Config{
 				Version: 3,
 				Projects: []atlantis.Project{

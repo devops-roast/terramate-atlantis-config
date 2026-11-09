@@ -9,11 +9,11 @@ import (
 // --generate-workflows.
 const GeneratedWorkflowName = "terramate"
 
-// DefaultDisableSafeguards is the set of Terramate safeguards the generated
-// workflow disables by default. Inside Atlantis the git safeguards cannot
-// pass: the pre-workflow hook writes atlantis.yaml (untracked or modified),
-// terraform init and plan create lock and plan files, and Atlantis clones
-// do not track the default branch the way a developer checkout does.
+// DefaultDisableSafeguards is what the generated workflow disables by default.
+// Of the git safeguards only git-out-of-sync applies to `terramate run
+// --no-recursive`, and it fails in Atlantis: a pull request branch is usually
+// behind its base branch. Terramate skips the untracked and uncommitted
+// checks under --no-recursive, so disabling all of "git" costs nothing.
 var DefaultDisableSafeguards = []string{"git"}
 
 // ValidSafeguardKeywords are the keywords accepted by

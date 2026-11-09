@@ -272,8 +272,9 @@ func trailingName(dir string, depth int) string {
 // Disambiguation only compares stacks whose raw names collide, so its output
 // can still clash with another stack's name, and sanitizing can map distinct
 // paths ("a/b" and "a-b") to the same name. Any remaining clash first falls
-// back to the full path, and if that still clashes, a numeric suffix is added
-// in dir order so the result is deterministic.
+// back to the full path ("stack" if that sanitizes to nothing), and if that
+// still clashes, a numeric suffix is added in dir order so the result is
+// deterministic.
 func ensureUniqueNames(names map[string]string) {
 	dirs := make([]string, 0, len(names))
 	for dir := range names {
@@ -388,7 +389,7 @@ func (n *projectNamer) lastNRaw(dir string) string {
 	return trailingName(dir, n.lastNDepth())
 }
 
-// lastNDepth defaults a zero ProjectNameDepth to the CLI default of 3.
+// lastNDepth defaults a ProjectNameDepth below 1 to the CLI default of 3.
 func (n *projectNamer) lastNDepth() int {
 	if n.depth <= 0 {
 		return 3
@@ -399,7 +400,7 @@ func (n *projectNamer) lastNDepth() int {
 // detectCommonPrefix returns the longest path prefix shared by every stack
 // dir, on segment boundaries (the root stack is ignored). Dirs are sorted so
 // a parent stack comes first and may itself be the prefix of its children;
-// autoStripRaw then falls back to the full path for it.
+// autoStripPath then falls back to the full path for it.
 func detectCommonPrefix(stacks []discovery.StackInfo) string {
 	dirs := make([]string, 0, len(stacks))
 	for _, s := range stacks {

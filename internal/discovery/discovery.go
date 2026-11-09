@@ -36,7 +36,6 @@ type DiscoverOptions struct {
 	Warnf func(format string, args ...any)
 }
 
-// StackInfo contains discovered stack metadata and atlantis overrides.
 type StackInfo struct {
 	// Name is the stack's name attribute, "" when unset (see declaredName).
 	Name        string
@@ -55,7 +54,7 @@ type StackInfo struct {
 	AfterDirs  []string
 	BeforeDirs []string
 
-	// Atlantis overrides extracted from globals
+	// From the stack's atlantis_* globals.
 	Skip              bool
 	Workflow          string
 	AutoplanEnabled   *bool // nil = use CLI default
@@ -125,8 +124,8 @@ func Discover(opts DiscoverOptions) (Result, error) {
 		orderByDir[normalizeStackPath(stack.Dir.String())] = order
 
 		// Errors only fail the run for selected stacks (below); here a stack
-		// whose globals or order entries can't be read is simply not
-		// skipped and has no ordering.
+		// whose globals or order entries can't be read counts as not skipped
+		// and unordered.
 		afterDirs, beforeDirs := order.afterDirs, order.beforeDirs
 		if order.err != nil {
 			afterDirs, beforeDirs = nil, nil
@@ -218,8 +217,8 @@ func Discover(opts DiscoverOptions) (Result, error) {
 			}
 		}
 
-		// Exclusions apply before anything about the stack is evaluated, so
-		// an excluded stack can't fail the run (e.g. with invalid globals).
+		// Exclusions are checked before the stored globals and order errors,
+		// so an excluded stack can't fail the run.
 		if _, excluded := excludedPaths[stackDir]; excluded {
 			continue
 		}
@@ -444,6 +443,9 @@ func intersectAllowedPaths(current, incoming map[string]struct{}) map[string]str
 // directory it matches: "infra" selects infra and infra/vpc, "*/vpc" selects
 // a/vpc and a/vpc/subnet. This mirrors how a directory scopes stacks in
 // Terramate (`terramate run` in a directory includes its nested stacks).
+//
+// The walk stops before the root, so "." selects the root stack only, not
+// every stack below it.
 func matchesPathOrParent(pattern, stackDir string) (bool, error) {
 	dir := filepath.ToSlash(strings.TrimPrefix(stackDir, "/"))
 	for {
@@ -459,7 +461,6 @@ func matchesPathOrParent(pattern, stackDir string) (bool, error) {
 	}
 }
 
-// matchesPathFilter reports whether pattern matches stackDir itself.
 func matchesPathFilter(pattern, stackDir string) (bool, error) {
 	normalizedPattern := normalizePathPattern(pattern)
 	if normalizedPattern == "" {
@@ -493,8 +494,9 @@ func matchesPathFilter(pattern, stackDir string) (bool, error) {
 
 // normalizePathPattern makes a path filter relative to the project root and
 // drops redundant separators and "." segments, so "infra", "/infra",
-// "./infra" and "infra/" are the same filter. It returns "" (no filter) for
-// an empty pattern or "/". "." stays "." and matches the root stack.
+// "./infra" and "infra/" are the same filter. It returns "" for an empty
+// pattern or "/", which matches every stack. "." stays "." and matches the
+// root stack.
 func normalizePathPattern(pattern string) string {
 	p := filepath.ToSlash(pattern)
 	if p == "" {
@@ -645,7 +647,6 @@ func classChar(chunk string) (r rune, rest string, err error) {
 	return r, rest, nil
 }
 
-// stackOverrides is the result of reading one stack's atlantis_* globals.
 type stackOverrides struct {
 	overrides globalsExtract.AtlantisOverrides
 	err       error

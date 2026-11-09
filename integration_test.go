@@ -93,7 +93,7 @@ func TestCLIConfigFileGolden(t *testing.T) {
 	require.Equal(t, 0, validate.exitCode, validate.stderr)
 }
 
-// --- CLI tests: run the real binary against fixture repositories ---
+// The tests below run the real binary against fixture repositories.
 
 var (
 	buildOnce sync.Once

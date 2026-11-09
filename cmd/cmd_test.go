@@ -385,7 +385,7 @@ func TestChangedDoesNotLeakTerramateLogs(t *testing.T) {
 	res := run(t, "generate", "--root", root, "--changed", "--no-header")
 
 	require.Equal(t, 0, res.code, res.stderr)
-	assert.Empty(t, res.stderr, "Terramate SDK logs must be silent by default")
+	assert.Empty(t, res.stderr, "Terramate SDK info and debug logs must not print by default")
 	assert.Contains(t, res.stdout, "dir: stacks/prod")
 	assert.NotContains(t, res.stdout, "dir: stacks/dev")
 
@@ -564,7 +564,7 @@ func TestConfigTagMappingErrorsNameConfigKey(t *testing.T) {
 		"tag_requirements:\n  \"\": [a]\n": `tag_requirements: empty tag`,
 		// A mapping is passed on as tag=value, so "x=y" would turn into tag
 		// "x" with workflow "y=wf".
-		"tag_workflows:\n  x=y: wf\n":    `tag_workflows: tag "x=y" contains '='`,
+		"tag_workflows:\n  x=y: wf\n":     `tag_workflows: tag "x=y" contains '='`,
 		"tag_requirements:\n  x=y: [a]\n": `tag_requirements: tag "x=y" contains '='`,
 	} {
 		writeFile(t, filepath.Join(root, ".terramate-atlantis.yaml"), content)
