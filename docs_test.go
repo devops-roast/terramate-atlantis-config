@@ -39,9 +39,11 @@ var (
 
 	// An inline Markdown link or image: [text](target "title").
 	markdownLink = regexp.MustCompile(`\]\(([^)\s]+)(?:\s+"[^"]*")?\)`)
-	inlineCode   = regexp.MustCompile("`[^`\n]*`")
-	headingLine  = regexp.MustCompile(`^(#{1,6})\s+(.*?)\s*#*\s*$`)
-	headingLink  = regexp.MustCompile(`\[([^\]]*)\]\([^)]*\)`)
+	// A link in an HTML element: <a href="target"> or <img src="target">.
+	htmlLink    = regexp.MustCompile(`\b(?:href|src)="([^"]+)"`)
+	inlineCode  = regexp.MustCompile("`[^`\n]*`")
+	headingLine = regexp.MustCompile(`^(#{1,6})\s+(.*?)\s*#*\s*$`)
+	headingLink = regexp.MustCompile(`\[([^\]]*)\]\([^)]*\)`)
 )
 
 func readFile(t *testing.T, path string) string {
@@ -332,8 +334,8 @@ func TestGithubAnchor(t *testing.T) {
 		anchors("## Edge cases\n\n```sh\n# Edge cases\n```\n\n### Edge cases\n"))
 }
 
-// Every relative link in the documentation must point at an existing file,
-// and every #anchor at a heading of the target document.
+// Every relative link in the documentation, Markdown or HTML, must point at
+// an existing file, and every #anchor at a heading of the target document.
 func TestDocsLinksResolve(t *testing.T) {
 	docs, err := filepath.Glob("docs/*.md")
 	require.NoError(t, err)
@@ -350,7 +352,7 @@ func TestDocsLinksResolve(t *testing.T) {
 
 	for _, doc := range docs {
 		text := inlineCode.ReplaceAllString(withoutCodeBlocks(readFile(t, doc)), "``")
-		links := markdownLink.FindAllStringSubmatch(text, -1)
+		links := append(markdownLink.FindAllStringSubmatch(text, -1), htmlLink.FindAllStringSubmatch(text, -1)...)
 		for _, m := range links {
 			target := m[1]
 			if strings.Contains(target, "://") || strings.HasPrefix(target, "mailto:") {
@@ -374,5 +376,19 @@ func TestDocsLinksResolve(t *testing.T) {
 			assert.True(t, anchorsOf(resolved)[fragment], "%s links to %s, but %s has no heading #%s",
 				doc, target, resolved, fragment)
 		}
+	}
+}
+
+// The README's documentation table must link every page in docs/, so a new
+// page can't be left unreachable.
+func TestReadmeListsEveryDocsPage(t *testing.T) {
+	pages, err := filepath.Glob("docs/*.md")
+	require.NoError(t, err)
+	require.NotEmpty(t, pages)
+
+	listed := table(t, section(t, "README.md", "## Documentation"), "Page")
+	for _, page := range pages {
+		assert.Contains(t, listed, "]("+filepath.ToSlash(page)+")",
+			"README.md's documentation table doesn't link %s", page)
 	}
 }

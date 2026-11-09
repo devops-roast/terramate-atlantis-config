@@ -1,20 +1,23 @@
+<sub>[Documentation](../README.md#documentation) › Filtering</sub>
+
 # Filtering
 
 By default, every stack in the repository gets a project. Filters narrow that set by [Terramate tag](#tag-filters), by [path](#path-filters), or to the stacks [changed](#changed-stacks) in your branch.
 
-With [`testdata/dependencies`](../testdata/dependencies), which has six stacks under `stacks/`:
+**On this page:** [Tag filters](#tag-filters) · [Path filters](#path-filters) · [Changed stacks](#changed-stacks) · [How filters combine](#how-filters-combine) · [Details](#details)
 
-```sh
-# Only stacks tagged "network": stacks/network/dns, stacks/network/vpc
-terramate-atlantis-config generate --root testdata/dependencies --filter network
+[`testdata/dependencies`](../testdata/dependencies) has six stacks under `stacks/`. Here is what each filter keeps:
 
-# Only stacks under stacks/network: the same two
-terramate-atlantis-config generate --root testdata/dependencies --filter-path stacks/network
+| Command                                                                        | Projects generated                                                   |
+| ------------------------------------------------------------------------------ | -------------------------------------------------------------------- |
+| `terramate-atlantis-config generate --root testdata/dependencies`              | all six                                                              |
+| `… --filter network`                                                           | `stacks/network/dns`, `stacks/network/vpc`                           |
+| `… --filter-path stacks/network`                                               | `stacks/network/dns`, `stacks/network/vpc`                           |
+| `… --exclude-tags network`                                                     | `stacks/app/api`, `stacks/app/web`, `stacks/data/rds`, `stacks/shared` |
+| `… --exclude-path stacks/app`                                                  | `stacks/data/rds`, `stacks/network/dns`, `stacks/network/vpc`, `stacks/shared` |
+| `… --filter-path '**/dns'`                                                     | `stacks/network/dns`                                                 |
 
-# Everything except stacks under stacks/app:
-# stacks/data/rds, stacks/network/dns, stacks/network/vpc, stacks/shared
-terramate-atlantis-config generate --root testdata/dependencies --exclude-path stacks/app
-```
+<p align="center"><sub><b>Table 1.</b> Filters applied to <code>testdata/dependencies</code>. <code>…</code> stands for the first command.</sub></p>
 
 Filters never change project names. See [Project naming](project-naming.md#names-are-stable).
 
@@ -40,6 +43,8 @@ You set tags in the [stack configuration](https://terramate.io/docs/cli/stacks/c
 | `**/vpc` | `vpc`, `prod/vpc`, `a/b/vpc`, and stacks nested under them |
 | `.`      | only a stack at the repository root                        |
 | `/`      | every stack                                                |
+
+<p align="center"><sub><b>Table 2.</b> Path patterns and the stacks they select.</sub></p>
 
 Rules:
 
@@ -69,9 +74,11 @@ project_name_depth: 2
 terramate-atlantis-config generate --changed --changed-base-ref origin/main --output atlantis.yaml
 ```
 
-Pass `--changed` only in the runs that need it. `changed: true` in the config file would also apply to the [pre-commit hook](setup.md#pre-commit-hook) and to `--check`.
+> [!WARNING]
+> Pass `--changed` only in the runs that need it. `changed: true` in the config file would also apply to the [pre-commit hook](setup.md#pre-commit-hook) and to `--check`.
 
-### Edge cases
+<details>
+<summary><b>Edge cases</b></summary>
 
 - **The base ref must exist in the checkout.** A shallow or single-branch clone (the default of `actions/checkout`, and of Atlantis' `branch` checkout strategy) doesn't have it. See [`--changed` in shallow clones](setup.md#--changed-in-shallow-clones).
 - **The comparison is direct, not from the merge base.** `--changed` compares the files at the base ref with the files at `HEAD`. If `main` moved on after you branched, stacks changed only on `main` count as changed as well. Pass the merge base to see only your branch's changes:
@@ -82,12 +89,27 @@ Pass `--changed` only in the runs that need it. `changed: true` in the config fi
 
 - **On the base branch itself**, with a clean working tree, nothing has changed, so the generated config has no projects.
 
+</details>
+
 ## How filters combine
 
-A stack is generated only if it passes every include filter (`--filter`, `--filter-path`, `--changed`) and no exclude filter (`--exclude-tags`, `--exclude-path`). A stack with `atlantis_skip = true` is never generated.
+A stack is generated only if it passes every include filter (`--filter`, `--filter-path`, `--changed`) and no exclude filter (`--exclude-tags`, `--exclude-path`). A stack with `atlantis_skip = true` is never generated. A filter you don't set lets every stack through.
+
+```mermaid
+flowchart TD
+    stack(["Each stack"]) --> include{"Passes --filter,<br/>--filter-path and --changed?"}
+    include -- no --> out["Not generated"]
+    include -- yes --> exclude{"Matches --exclude-tags<br/>or --exclude-path?"}
+    exclude -- yes --> out
+    exclude -- no --> skip{"atlantis_skip = true?"}
+    skip -- yes --> out
+    skip -- no --> project["Project generated"]
+```
+
+<p align="center"><sub><b>Figure 1.</b> The checks every stack goes through.</sub></p>
 
 ```sh
-# Stacks under infra, except infra/rds
+# Stacks under infra, except infra/rds: generates infra/vpc
 terramate-atlantis-config generate --root testdata/multi --filter-path infra --exclude-path infra/rds
 ```
 

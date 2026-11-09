@@ -1,11 +1,10 @@
+<sub>[Documentation](../README.md#documentation) › Configuration</sub>
+
 # Configuration
 
 You configure `terramate-atlantis-config generate` with flags, with a `.terramate-atlantis.yaml` file, or both. Flags you pass override the file.
 
-- [Config file](#config-file)
-  - [Keys](#keys)
-- [CLI flags](#cli-flags)
-  - [Output](#output) · [Filtering](#filtering) · [Naming](#naming) · [Dependencies](#dependencies) · [Workflows](#workflows) · [CI modes](#ci-modes)
+**On this page:** [Config file](#config-file) · [Keys](#keys) · [CLI flags](#cli-flags): [Output](#output) · [Filtering](#filtering) · [Naming](#naming) · [Dependencies](#dependencies) · [Workflows](#workflows) · [CI modes](#ci-modes)
 
 ## Config file
 
@@ -41,11 +40,26 @@ workflows:
         - run: terramate run --no-recursive --disable-safeguards=git -- terraform apply "$PLANFILE"
 ```
 
-Rules:
+<p align="center"><sub><b>Figure 1.</b> A config file that sets a value for most kinds of key.</sub></p>
 
-- **Location.** The tool looks for `.terramate-atlantis.yaml`, then `.terramate-atlantis.yml`, in `--root`. If both exist, `.yaml` wins. Use `--config path/to/file.yaml` to read another file.
-- **Precedence.** A flag you pass explicitly overrides the file. That includes an empty value: `--apply-requirements=` or `--tag-requirements=` replaces the file's list or mappings with none.
-- **Unknown keys are an error**, so a typo fails loudly instead of being ignored. The error lists every valid key.
+Each setting comes from the most specific source that sets it:
+
+```mermaid
+flowchart LR
+    default["Built-in default"] -- "overridden by" --> file[".terramate-atlantis.yaml"]
+    file -- "overridden by" --> flag["Flag you pass"]
+```
+
+<p align="center"><sub><b>Figure 2.</b> Precedence of settings, from lowest to highest.</sub></p>
+
+<dl>
+<dt>Location</dt>
+<dd>The tool looks for <code>.terramate-atlantis.yaml</code>, then <code>.terramate-atlantis.yml</code>, in <code>--root</code>. If both exist, <code>.yaml</code> wins. Use <code>--config path/to/file.yaml</code> to read another file.</dd>
+<dt>Precedence</dt>
+<dd>A flag you pass explicitly overrides the file. That includes an empty value: <code>--apply-requirements=</code> or <code>--tag-requirements=</code> replaces the file's list or mappings with none.</dd>
+<dt>Unknown keys</dt>
+<dd>An unknown key is an error, so a typo fails loudly instead of being ignored. The error lists every valid key.</dd>
+</dl>
 
 ### Keys
 
@@ -86,15 +100,20 @@ Every key matches a `generate` flag:
 | `workflow_disable_safeguards` | list(string)              | `--workflow-disable-safeguards` |
 | `workflows`                   | map of Atlantis workflows | none (config file only)         |
 
+<p align="center"><sub><b>Table 1.</b> Config file keys and the flags they match.</sub></p>
+
 `--root`, `--config`, `--check` and `--diff` describe a single run and have no config key.
 
-#### Edge cases
+<details>
+<summary><b>Edge cases</b></summary>
 
 - `tag_requirements` values and `workflow_disable_safeguards` may also be a comma-separated string: `production: approved,mergeable`.
 - A key set to null, or a string key set to `""`, is the same as leaving it out.
 - An empty list is an explicit value, like passing the flag with an empty value: `when_modified: []` means no patterns. `workflow_disable_safeguards: ""` counts as an empty list too.
 - `output` is relative to the current directory, not to `--root`.
 - `workflows` is merged with other workflows by name. See [Workflows](workflows.md#merging-workflows).
+
+</details>
 
 ## CLI flags
 
@@ -111,6 +130,8 @@ Run `terramate-atlantis-config generate --help` for the same list. Flags are gro
 | `--config`    |         | Config file path (default: `.terramate-atlantis.yaml` or `.yml` in `--root`)       |
 | `--log-level` | `warn`  | Terramate SDK log level: `trace`, `debug`, `info`, `warn`, `error`, `disabled`      |
 
+<p align="center"><sub><b>Table 2.</b> Output flags.</sub></p>
+
 The generated config goes to stdout or the `--output` file. Logs go to stderr, so they never mix with it. `--log-level` only controls Terramate SDK messages; this tool's own warnings always print. When it writes a file, the tool reports it on stderr: `Generated atlantis.yaml with 3 projects`.
 
 ### Filtering
@@ -121,6 +142,8 @@ The generated config goes to stdout or the `--output` file. Logs go to stderr, s
 | `--filter-path`  |         | Include only stacks at or under directories matching this glob    |
 | `--exclude-tags` |         | Exclude stacks matching this Terramate tag filter                 |
 | `--exclude-path` |         | Exclude stacks at or under directories matching this glob         |
+
+<p align="center"><sub><b>Table 3.</b> Filtering flags. <code>--changed</code> is under <a href="#ci-modes">CI modes</a>.</sub></p>
 
 See [Filtering](filtering.md) for tag filters, glob rules, and how filters combine.
 
@@ -135,7 +158,7 @@ See [Filtering](filtering.md) for tag filters, glob rules, and how filters combi
 | `--create-workspace`      | `false`      | Set workspace from stack path (made a valid Atlantis workspace; the root stack keeps the default) |
 | `--sort-by`               | `dir`        | Sort projects by `dir`, `name` or `execution_order_group` (needs `--execution-order-groups`, else it sorts by dir) |
 
-See [Project naming](project-naming.md).
+<p align="center"><sub><b>Table 4.</b> Naming flags. See <a href="project-naming.md">Project naming</a>.</sub></p>
 
 ### Dependencies
 
@@ -144,7 +167,7 @@ See [Project naming](project-naming.md).
 | `--execution-order-groups` | `false` | Set `execution_order_group` from stack ordering          |
 | `--depends-on`             | `false` | Set `depends_on` (project names) from stack ordering     |
 
-See [Dependencies](dependencies.md).
+<p align="center"><sub><b>Table 5.</b> Dependency flags. See <a href="dependencies.md">Dependencies</a>.</sub></p>
 
 ### Workflows
 
@@ -164,6 +187,8 @@ See [Dependencies](dependencies.md).
 | `--workflow-terramate-wrap` | `true`                                 | Run terraform in the generated workflow through `terramate run`     |
 | `--workflow-disable-safeguards` | `git`                              | Terramate safeguards the generated workflow disables; empty keeps all |
 
+<p align="center"><sub><b>Table 6.</b> Workflow and project default flags.</sub></p>
+
 Stacks can override most of these defaults with [globals](stack-globals.md). See [Workflows](workflows.md) for how workflows are generated, assigned and merged, and [Stack globals](stack-globals.md#apply-requirements) for how apply requirements are chosen.
 
 ### CI modes
@@ -174,6 +199,8 @@ Stacks can override most of these defaults with [globals](stack-globals.md). See
 | `--changed-base-ref` | `main`  | Git ref that `--changed` compares against                            |
 | `--check`            | `false` | Exit 1 if the output file is missing or would change                 |
 | `--diff`             | `false` | Print a unified diff of the output file against the generated content; exit 1 if they differ |
+
+<p align="center"><sub><b>Table 7.</b> CI mode flags.</sub></p>
 
 See [Filtering](filtering.md#changed-stacks) for `--changed`.
 

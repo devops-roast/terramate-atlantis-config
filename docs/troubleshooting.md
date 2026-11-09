@@ -1,15 +1,21 @@
+<sub>[Documentation](../README.md#documentation) › Troubleshooting</sub>
+
 # Troubleshooting
 
-Each entry lists the symptom, its cause and the fix.
+Find your symptom below, then follow the link for its cause and fix.
 
-- [Atlantis rejects atlantis.yaml](#atlantis-rejects-atlantisyaml)
-- [Plan fails: current HEAD is out-of-date](#plan-fails-current-head-is-out-of-date)
-- [`--changed` fails with "unknown revision"](#--changed-fails-with-unknown-revision)
-- [`--changed` lists stacks you didn't touch](#--changed-lists-stacks-you-didnt-touch)
-- [A global has no effect](#a-global-has-no-effect)
-- [`--check` fails](#--check-fails)
-- [`--depends-on` fails without project names](#--depends-on-fails-without-project-names)
-- [Other errors](#other-errors)
+| Symptom                                                                     | Where it shows up       | Go to                                                                        |
+| --------------------------------------------------------------------------- | ----------------------- | ---------------------------------------------------------------------------- |
+| `repo config not allowed to …`                                              | Atlantis comment        | [Atlantis rejects atlantis.yaml](#atlantis-rejects-atlantisyaml)             |
+| `current HEAD is out-of-date with the remote base branch`                   | Atlantis plan output    | [Plan fails: current HEAD is out-of-date](#plan-fails-current-head-is-out-of-date) |
+| `unknown revision or path not in the working tree`                          | `generate --changed`    | [`--changed` fails with "unknown revision"](#--changed-fails-with-unknown-revision) |
+| Stacks you didn't touch are in the output                                   | `generate --changed`    | [`--changed` lists stacks you didn't touch](#--changed-lists-stacks-you-didnt-touch) |
+| `Warning: unknown global …`, or a global changes nothing                    | `generate`              | [A global has no effect](#a-global-has-no-effect)                            |
+| `atlantis.yaml is out of date` or `does not exist`                          | `generate --check`      | [`--check` fails](#--check-fails)                                            |
+| `depends_on requires project names`                                         | `generate --depends-on` | [`--depends-on` fails without project names](#--depends-on-fails-without-project-names) |
+| Anything else                                                               |                         | [Other errors](#other-errors)                                                |
+
+<p align="center"><sub><b>Table 1.</b> Symptom index.</sub></p>
 
 ## Atlantis rejects atlantis.yaml
 
@@ -105,7 +111,8 @@ terramate-atlantis-config generate --output atlantis.yaml --check --diff
 terramate-atlantis-config generate --output atlantis.yaml
 ```
 
-If the diff is unexpected, check that CI passes the same flags you use locally. For example, `--root`, filters and `--format` all change the output. A `.terramate-atlantis.yaml` in `--root` applies to both runs.
+> [!TIP]
+> If the diff is unexpected, check that CI passes the same flags you use locally. For example, `--root`, filters and `--format` all change the output. A `.terramate-atlantis.yaml` in `--root` applies to both runs.
 
 ## `--depends-on` fails without project names
 
@@ -121,10 +128,14 @@ Error: depends_on requires project names: Atlantis matches depends_on entries ag
 
 ## Other errors
 
-| Message                                                                                   | Fix                                                                                   |
-| ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| `--check and --diff require an output file (set --output or 'output' in the config file)` | Pass `--output atlantis.yaml`.                                                        |
-| `config ".terramate-atlantis.yaml": line 1: unknown key "outptu" (valid keys: …)`         | Fix the key name in the [config file](configuration.md#keys).                         |
-| `extracting atlantis globals for stack "/prod": atlantis_autoplan must be bool`           | Give the global the type listed in [Stack globals](stack-globals.md#globals).         |
-| `path filter "../infra": the pattern leads outside the root`                              | Write [path filters](filtering.md#path-filters) relative to `--root`.                 |
+| Message                                                                                   | Fix                                                                                        |
+| ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `--check and --diff require an output file (set --output or 'output' in the config file)` | Pass `--output atlantis.yaml`.                                                             |
+| `config ".terramate-atlantis.yaml": line 1: unknown key "outptu" (valid keys: …)`         | Fix the key name in the [config file](configuration.md#keys).                              |
+| `extracting atlantis globals for stack "/prod": atlantis_autoplan must be bool`           | Give the global the type listed in [Stack globals](stack-globals.md#globals).              |
+| `path filter "../infra": the pattern leads outside the root`                              | Write [path filters](filtering.md#path-filters) relative to `--root`.                      |
 | `WRN path /stacks/app/does-not-exist not found in configuration`                          | A stack's `after` or `before` names a missing path. It's ignored; fix or remove the entry. |
+
+<p align="center"><sub><b>Table 2.</b> Other messages and how to fix them.</sub></p>
+
+Didn't find your problem? Check the [FAQ](faq.md), or [open a bug report](https://github.com/devops-roast/terramate-atlantis-config/issues/new?template=bug.yml).
