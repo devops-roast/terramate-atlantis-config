@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -551,5 +552,35 @@ func TestDiscoverExcludedStackWithInvalidGlobals(t *testing.T) {
 
 	if _, err := Discover(DiscoverOptions{RootDir: root}); err == nil {
 		t.Fatal("a selected stack with invalid globals must still fail")
+	}
+}
+
+// Path filters are relative to the root, so a pattern that leads out of it
+// can't match any stack: "../infra" or ".." used to select nothing (an empty
+// atlantis.yaml), and "/.." was read as "/", which selects everything.
+func TestDiscoverRejectsPathFiltersOutsideRoot(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "terramate.tm.hcl"), "terramate {}\n")
+	writeFile(t, filepath.Join(root, "infra/stack.tm.hcl"), "stack {}\n")
+
+	for _, pattern := range []string{"..", "../infra", "/..", "./../infra", "infra/../..", "/../*"} {
+		for _, opts := range []DiscoverOptions{
+			{RootDir: root, PathFilter: pattern},
+			{RootDir: root, ExcludePath: pattern},
+		} {
+			_, err := Discover(opts)
+			if err == nil || !strings.Contains(err.Error(), "outside the root") {
+				t.Errorf("Discover(filter %q, exclude %q): got %v, want an error about leaving the root",
+					opts.PathFilter, opts.ExcludePath, err)
+			}
+		}
+	}
+
+	// ".." segments that stay inside the root are fine.
+	result, err := Discover(DiscoverOptions{RootDir: root, PathFilter: "other/../infra"})
+	if err != nil || len(result.Stacks) != 1 {
+		t.Fatalf("filter other/../infra: got %d stacks, %v; want infra", len(result.Stacks), err)
 	}
 }

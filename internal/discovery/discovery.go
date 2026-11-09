@@ -82,6 +82,15 @@ func Discover(opts DiscoverOptions) (Result, error) {
 		rootDir = "."
 	}
 
+	for _, pattern := range []struct{ flag, value string }{
+		{"path filter", opts.PathFilter},
+		{"exclude path filter", opts.ExcludePath},
+	} {
+		if err := checkPathPattern(pattern.value); err != nil {
+			return Result{}, fmt.Errorf("%s %q: %w", pattern.flag, pattern.value, err)
+		}
+	}
+
 	absRootDir, err := filepath.Abs(rootDir)
 	if err != nil {
 		return Result{}, fmt.Errorf("resolving root path %q: %w", rootDir, err)
@@ -477,6 +486,17 @@ func normalizePathPattern(pattern string) string {
 		return ""
 	}
 	return strings.TrimPrefix(path.Clean(p), "/")
+}
+
+// checkPathPattern rejects a path filter that leads out of the root, such
+// as "../infra": stack dirs are relative to the root, so it could never
+// match one, and path.Clean would turn "/.." into "/", which matches all.
+func checkPathPattern(pattern string) error {
+	rel := path.Clean(strings.TrimLeft(filepath.ToSlash(pattern), "/"))
+	if rel == ".." || strings.HasPrefix(rel, "../") {
+		return fmt.Errorf("the pattern leads outside the root; path filters are relative to the root directory")
+	}
+	return nil
 }
 
 // globToRegexp translates a path glob containing "**" into a regular
