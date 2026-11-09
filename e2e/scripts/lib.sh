@@ -126,7 +126,7 @@ push_commit() {
 # assert_comment_count TEXT N: TEXT appears exactly N times in LAST_COMMENT.
 assert_comment_count() {
 	local text="$1" want="$2" got
-	got=$(grep -oF -- "$text" <<<"$LAST_COMMENT" | wc -l | tr -d ' ')
+	got=$({ grep -oF -- "$text" <<<"$LAST_COMMENT" || true; } | wc -l | tr -d ' ')
 	[ "$got" = "$want" ] || {
 		printf '%s\n' "$LAST_COMMENT" >&2
 		fail "expected ${want} occurrence(s) of '${text}', found ${got}"
