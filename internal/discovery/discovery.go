@@ -156,7 +156,7 @@ func Discover(opts DiscoverOptions) (Result, error) {
 
 		allowedPaths = make(map[string]struct{}, len(filteredPaths))
 		for _, p := range filteredPaths {
-			allowedPaths[p.String()] = struct{}{}
+			allowedPaths[normalizeStackPath(p.String())] = struct{}{}
 		}
 	}
 
@@ -179,7 +179,7 @@ func Discover(opts DiscoverOptions) (Result, error) {
 
 		changedPaths := make(map[string]struct{}, len(report.Stacks))
 		for _, entry := range report.Stacks {
-			changedPaths[entry.Stack.Dir.String()] = struct{}{}
+			changedPaths[normalizeStackPath(entry.Stack.Dir.String())] = struct{}{}
 		}
 
 		allowedPaths = intersectAllowedPaths(allowedPaths, changedPaths)
@@ -201,13 +201,13 @@ func Discover(opts DiscoverOptions) (Result, error) {
 	discovered := make([]StackInfo, 0, len(stacks))
 	for _, sortable := range stacks {
 		stack := sortable.Stack
+		stackDir := normalizeStackPath(stack.Dir.String())
 		if allowedPaths != nil {
-			if _, ok := allowedPaths[stack.Dir.String()]; !ok {
+			if _, ok := allowedPaths[stackDir]; !ok {
 				continue
 			}
 		}
 
-		stackDir := normalizeStackPath(stack.Dir.String())
 		if opts.PathFilter != "" {
 			matched, err := matchesPathOrParent(opts.PathFilter, stackDir)
 			if err != nil {
