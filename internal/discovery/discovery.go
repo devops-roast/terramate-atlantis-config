@@ -36,7 +36,7 @@ type DiscoverOptions struct {
 
 // StackInfo contains discovered stack metadata and atlantis overrides.
 type StackInfo struct {
-	// Core metadata from Terramate SDK
+	// Name is the stack's name attribute, "" when unset (see declaredName).
 	Name        string
 	ID          string
 	Description string
@@ -130,7 +130,7 @@ func Discover(opts DiscoverOptions) (Result, error) {
 		}
 
 		allStacks = append(allStacks, StackInfo{
-			Name:        stack.Name,
+			Name:        declaredName(root, stack),
 			ID:          stack.ID,
 			Description: stack.Description,
 			Dir:         normalizeStackPath(stack.Dir.String()),
@@ -243,7 +243,7 @@ func Discover(opts DiscoverOptions) (Result, error) {
 		afterDirs, beforeDirs := order.afterDirs, order.beforeDirs
 
 		discovered = append(discovered, StackInfo{
-			Name:              stack.Name,
+			Name:              declaredName(root, stack),
 			ID:                stack.ID,
 			Description:       stack.Description,
 			Dir:               stackDir,
@@ -320,6 +320,17 @@ func atlantisOverrides(root *config.Root, stack *config.Stack) (globalsExtract.A
 		return globalsExtract.AtlantisOverrides{}, fmt.Errorf("extracting atlantis globals for stack %q: %w", stack.Dir.String(), err)
 	}
 	return overrides, nil
+}
+
+// declaredName returns the stack's name attribute, or "" when it is unset.
+// Terramate fills an unset name with the base name of the stack's absolute
+// directory, which for the root stack is the checkout directory: a name that
+// differs between a local clone and Atlantis' working copy.
+func declaredName(root *config.Root, stack *config.Stack) string {
+	if tree, ok := root.Lookup(stack.Dir); ok && tree.Node.Stack != nil {
+		return tree.Node.Stack.Name
+	}
+	return stack.Name
 }
 
 // stackOrder is a stack's resolved stack.after and stack.before entries.

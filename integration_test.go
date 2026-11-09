@@ -268,6 +268,27 @@ func TestCLIRootStack(t *testing.T) {
 	require.Equal(t, []string{"root"}, projects["infra/vpc"].DependsOn)
 }
 
+// With stack-name, a root stack without a name attribute is named "root".
+// Terramate fills an unset name with the stack directory's base name, which
+// for the root stack is the checkout directory: the name would differ between
+// a local clone and Atlantis' working copy (".../<pr>/default").
+func TestCLIRootStackWithoutNameIsNamedRoot(t *testing.T) {
+	for _, checkout := range []string{"my-repo", "default"} {
+		dir := filepath.Join(t.TempDir(), checkout)
+		require.NoError(t, os.MkdirAll(filepath.Join(dir, "infra", "vpc"), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "terramate.tm.hcl"),
+			[]byte("terramate {\n  config {}\n}\n\nstack {}\n"), 0o644))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "infra", "vpc", "stack.tm.hcl"),
+			[]byte("stack {}\n"), 0o644))
+		initGitRepo(t, dir)
+
+		cfg := generateAndValidate(t, dir, "--project-name-strategy", "stack-name")
+		projects := projectsByDir(cfg)
+		require.Equal(t, "root", projects["."].Name, "checkout dir %q", checkout)
+		require.Equal(t, "infra-vpc", projects["infra/vpc"].Name, "checkout dir %q", checkout)
+	}
+}
+
 func TestCLINamesAreStableAcrossFilters(t *testing.T) {
 	dir := t.TempDir()
 	writeTestFile(t, dir, "terramate.tm.hcl", "terramate {\n  config {\n  }\n}\n")
