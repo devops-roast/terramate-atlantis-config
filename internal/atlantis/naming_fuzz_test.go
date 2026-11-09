@@ -80,3 +80,57 @@ func FuzzProjectNamesUniqueAndValid(f *testing.F) {
 		}
 	})
 }
+
+// FuzzProjectNamesAreStable checks the README's "names are stable" claim:
+// with AllStacks set, a stack's name doesn't depend on which stacks a run
+// selected (--changed, --filter, ...) nor on the order stacks are listed in.
+func FuzzProjectNamesAreStable(f *testing.F) {
+	f.Add("a/b\na-b\nb\n.", "", 1, uint64(0b1010))
+	f.Add("stacks/aws/prod/vpc\nstacks/aws/production/vpc\nstacks/gcp/prod/vpc", "stacks/aws", 2, uint64(1))
+	f.Add("x/y/z\nx-y/z\nx/y-z\nx-y-z\n-/-\n~\nü/ü", "x", 3, uint64(0b110))
+	f.Add("root\n.\nstack\n-", "", 1, uint64(0b10))
+
+	strategies := []string{NameStrategyAutoStrip, NameStrategyStackName, NameStrategyLastN, NameStrategyFull}
+
+	f.Fuzz(func(t *testing.T, raw, prefix string, depth int, selection uint64) {
+		all := fuzzDirs(raw)
+		if len(all) == 0 || len(all) > 64 {
+			t.Skip()
+		}
+		if depth < 1 || depth > 8 {
+			depth = 1 + (depth&0x7+8)%8
+		}
+		var selected []discovery.StackInfo
+		for i, s := range all {
+			if selection&(1<<(uint(i)%64)) != 0 {
+				selected = append(selected, s)
+			}
+		}
+		reversed := make([]discovery.StackInfo, len(all))
+		for i, s := range all {
+			reversed[len(all)-1-i] = s
+		}
+
+		for _, strategy := range strategies {
+			opts := Options{
+				CreateProjectName:   true,
+				ProjectNameStrategy: strategy,
+				ProjectNamePrefix:   prefix,
+				ProjectNameDepth:    depth,
+			}
+			full := namesByDirOf(mustGenerate(t, all, opts))
+
+			opts.AllStacks = reversed
+			for dir, name := range namesByDirOf(mustGenerate(t, reversed, opts)) {
+				if full[dir] != name {
+					t.Fatalf("%s: %q is named %q, or %q when stacks are listed in another order", strategy, dir, full[dir], name)
+				}
+			}
+			for dir, name := range namesByDirOf(mustGenerate(t, selected, opts)) {
+				if full[dir] != name {
+					t.Fatalf("%s: %q is named %q, or %q when only some stacks are selected", strategy, dir, full[dir], name)
+				}
+			}
+		}
+	})
+}
