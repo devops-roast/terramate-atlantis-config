@@ -272,7 +272,7 @@ func MarshalYAML(cfg Config, addHeader bool) ([]byte, error) {
 	if err := node.Encode(doc); err != nil {
 		return nil, err
 	}
-	quoteTrailingWhitespace(&node)
+	quoteUnsafeLiteralBlocks(&node)
 
 	var buf bytes.Buffer
 	enc := yaml.NewEncoder(&buf)
@@ -290,7 +290,7 @@ func MarshalYAML(cfg Config, addHeader bool) ([]byte, error) {
 	return append([]byte(header), marshaled...), nil
 }
 
-// quoteTrailingWhitespace double-quotes the multi-line strings that yaml.v3
+// quoteUnsafeLiteralBlocks double-quotes the multi-line strings that yaml.v3
 // would write as a literal block that doesn't survive text fixers or doesn't
 // read back as the same value:
 //   - whitespace at the end of a line ends up at the end of an output line,
@@ -302,18 +302,18 @@ func MarshalYAML(cfg Config, addHeader bool) ([]byte, error) {
 //   - a string of only line breaks ("\n") loses one when read back.
 //
 // Any of these changes the value and makes --check fail on every run.
-func quoteTrailingWhitespace(node *yaml.Node) {
+func quoteUnsafeLiteralBlocks(node *yaml.Node) {
 	if node.Kind == yaml.ScalarNode && node.Tag == "!!str" && strings.Contains(node.Value, "\n") &&
 		!literalBlockSafe(node.Value) {
 		node.Style = yaml.DoubleQuotedStyle
 	}
 	for _, child := range node.Content {
-		quoteTrailingWhitespace(child)
+		quoteUnsafeLiteralBlocks(child)
 	}
 }
 
 // literalBlockSafe reports whether a multi-line string can be written as a
-// literal block, see quoteTrailingWhitespace. A first line that starts with
+// literal block, see quoteUnsafeLiteralBlocks. A first line that starts with
 // whitespace or a line break needs an indentation indicator, which yaml.v3
 // writes wrongly: the output fails to parse or reads back as another value.
 func literalBlockSafe(value string) bool {

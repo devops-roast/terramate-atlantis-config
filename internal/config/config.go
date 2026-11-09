@@ -180,15 +180,10 @@ func isEmptyDocument(doc *yaml.Node) bool {
 // checkKnownKeys reports unknown top-level keys with a readable message.
 // Nested values (workflows, tag maps) are free-form or typed by the decoder.
 func checkKnownKeys(root *yaml.Node) error {
-	if root.Kind != yaml.DocumentNode || len(root.Content) == 0 {
+	if isEmptyDocument(root) {
 		return nil
 	}
 	mapping := root.Content[0]
-	// A document with no content ("---" with every key commented out) is
-	// an empty config, like an empty file.
-	if mapping.Kind == yaml.ScalarNode && mapping.Tag == "!!null" {
-		return nil
-	}
 	if mapping.Kind != yaml.MappingNode {
 		return fmt.Errorf("line %d: expected a mapping of config keys", mapping.Line)
 	}
