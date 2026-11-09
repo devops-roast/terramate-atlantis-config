@@ -1,0 +1,44 @@
+name: Bug report
+description: Something doesn't work as expected
+labels: [bug]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you ran, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce
+      description: >-
+        The command you ran, your .terramate-atlantis.yaml if you have one,
+        and a minimal stack layout that shows the problem.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Output
+      description: The generated atlantis.yaml (or the relevant part) and any errors or warnings.
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `terramate-atlantis-config version`.
+    validations:
+      required: true
+  - type: dropdown
+    id: setup
+    attributes:
+      label: Where does it run?
+      options:
+        - Locally
+        - pre-commit hook
+        - GitHub Action
+        - Other CI
+        - Atlantis pre-workflow hook
