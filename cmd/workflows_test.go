@@ -375,3 +375,45 @@ func TestConfigFileFlagEquivalents(t *testing.T) {
 		assert.Contains(t, res.stderr, `unknown key "chaned"`)
 	})
 }
+
+// Config file (and preserved) workflows are copied as written. Decoding them
+// into Go values retyped unquoted scalars: Atlantis reads `value: 1.10` as the
+// string "1.10", but the output said 1.1. Re-reading a float such as 1.0 as an
+// int also made --preserve-workflows warn on every run, and a non-string key
+// broke --format json.
+func TestConfigWorkflowScalarsAreKeptAsWritten(t *testing.T) {
+	root := newFixture(t)
+	writeFile(t, filepath.Join(root, ".terramate-atlantis.yaml"), `workflows:
+  w:
+    plan:
+      steps:
+        - env: {name: A, value: 1.10}
+        - env: {name: B, value: 0x1F}
+        - env: {name: C, value: 2026-01-01}
+        - env: {name: D, value: 1.0}
+        - env: {name: E, value: yes}
+        - env: {name: F, value: !!binary aGk=}
+        - run: echo a && echo b
+    1: x
+`)
+	output := filepath.Join(root, "atlantis.yaml")
+
+	res := generateTo(t, root, output, "--no-header", "--preserve-workflows")
+	require.Equal(t, 0, res.code, res.stderr)
+	written, err := os.ReadFile(output)
+	require.NoError(t, err)
+	for _, want := range []string{"value: 1.10\n", "value: 0x1F\n", "value: 2026-01-01\n", "value: 1.0\n", "value: \"yes\"\n", "value: !!binary aGk=\n", "\"1\": x\n"} {
+		assert.Contains(t, string(written), want)
+	}
+
+	// A second run preserves the workflow it wrote: no override warning.
+	res = generateTo(t, root, output, "--no-header", "--preserve-workflows")
+	require.Equal(t, 0, res.code, res.stderr)
+	assert.NotContains(t, res.stderr, "overrides")
+
+	res = run(t, "generate", "--root", root, "--format", "json")
+	require.Equal(t, 0, res.code, res.stderr)
+	for _, want := range []string{`"value": 1.10`, `"value": "0x1F"`, `"value": "2026-01-01"`, `"value": 1.0`, `"value": "yes"`, `"1": "x"`} {
+		assert.Contains(t, res.stdout, want)
+	}
+}

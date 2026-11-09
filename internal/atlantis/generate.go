@@ -240,16 +240,36 @@ func workspaceName(dir string) string {
 	return workspace
 }
 
+// yamlConfig is Config as MarshalYAML encodes it: the workflows can hold
+// keys that a map[string] can't, see styleMultilineStrings.
+type yamlConfig struct {
+	Version       int         `yaml:"version"`
+	Automerge     bool        `yaml:"automerge"`
+	ParallelPlan  bool        `yaml:"parallel_plan"`
+	ParallelApply bool        `yaml:"parallel_apply"`
+	Projects      []Project   `yaml:"projects"`
+	Workflows     interface{} `yaml:"workflows,omitempty"`
+}
+
 // MarshalYAML marshals an Atlantis Config into YAML.
 func MarshalYAML(cfg Config, addHeader bool) ([]byte, error) {
 	// Workflows come from the config file or the existing output file, so
 	// they may hold any string. Their style is chosen before encoding:
 	// node.Encode writes the value and parses it back, and yaml.v3 can't
 	// read back some of its own literal blocks.
-	cfg.Workflows = styleMultilineStrings(cfg.Workflows).(map[string]interface{})
+	doc := yamlConfig{
+		Version:       cfg.Version,
+		Automerge:     cfg.Automerge,
+		ParallelPlan:  cfg.ParallelPlan,
+		ParallelApply: cfg.ParallelApply,
+		Projects:      cfg.Projects,
+	}
+	if len(cfg.Workflows) > 0 {
+		doc.Workflows = styleMultilineStrings(cfg.Workflows)
+	}
 
 	var node yaml.Node
-	if err := node.Encode(cfg); err != nil {
+	if err := node.Encode(doc); err != nil {
 		return nil, err
 	}
 	quoteTrailingWhitespace(&node)
@@ -335,14 +355,25 @@ func styleMultilineStrings(v interface{}) interface{} {
 			return map[string]interface{}(nil)
 		}
 		out := make(map[string]interface{}, len(v))
+		multilineKeys := false
 		for key, value := range v {
 			out[key] = styleMultilineStrings(value)
+			multilineKeys = multilineKeys || strings.Contains(key, "\n")
 		}
-		return out
+		if !multilineKeys {
+			return out
+		}
+		// Keys are written like values, so a multi-line key needs the
+		// same treatment, which a map[string] can't hold.
+		styled := make(map[interface{}]interface{}, len(out))
+		for key, value := range out {
+			styled[styleMultilineStrings(key)] = value
+		}
+		return styled
 	case map[interface{}]interface{}:
 		out := make(map[interface{}]interface{}, len(v))
 		for key, value := range v {
-			out[key] = styleMultilineStrings(value)
+			out[styleMultilineStrings(key)] = styleMultilineStrings(value)
 		}
 		return out
 	case []interface{}:

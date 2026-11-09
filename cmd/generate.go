@@ -552,11 +552,12 @@ func mergeConfig(cmd *cobra.Command, opts *GenerateOptions, cfg *internalconfig.
 		opts.Format = cfg.Format
 	}
 
-	if len(cfg.Workflows) > 0 {
-		opts.ConfigWorkflows = make(map[string]interface{}, len(cfg.Workflows))
-		for name, workflow := range cfg.Workflows {
-			opts.ConfigWorkflows[name] = workflow
-		}
+	workflows, err := atlantis.WorkflowsValue(&cfg.Workflows)
+	if err != nil {
+		return fmt.Errorf("config file workflows: %w", err)
+	}
+	if len(workflows) > 0 {
+		opts.ConfigWorkflows = workflows
 	}
 
 	return nil

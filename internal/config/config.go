@@ -17,38 +17,40 @@ import (
 // FileConfig mirrors the generate command's flags. Every key is optional;
 // CLI flags that are set explicitly take precedence over these values.
 type FileConfig struct {
-	Output                    string                 `yaml:"output"`
-	Format                    string                 `yaml:"format"`
-	NoHeader                  *bool                  `yaml:"no_header"`
-	LogLevel                  string                 `yaml:"log_level"`
-	Autoplan                  *bool                  `yaml:"autoplan"`
-	Parallel                  *bool                  `yaml:"parallel"`
-	Automerge                 *bool                  `yaml:"automerge"`
-	Workflow                  string                 `yaml:"workflow"`
-	TerraformVersion          string                 `yaml:"terraform_version"`
-	Filter                    string                 `yaml:"filter"`
-	FilterPath                string                 `yaml:"filter_path"`
-	ExcludeTags               string                 `yaml:"exclude_tags"`
-	ExcludePath               string                 `yaml:"exclude_path"`
-	Changed                   *bool                  `yaml:"changed"`
-	ChangedBaseRef            string                 `yaml:"changed_base_ref"`
-	CreateProjectName         *bool                  `yaml:"create_project_name"`
-	CreateWorkspace           *bool                  `yaml:"create_workspace"`
-	ExecutionOrderGroups      *bool                  `yaml:"execution_order_groups"`
-	DependsOn                 *bool                  `yaml:"depends_on"`
-	WhenModified              []string               `yaml:"when_modified"`
-	ApplyRequirements         []string               `yaml:"apply_requirements"`
-	TagWorkflows              map[string]string      `yaml:"tag_workflows"`
-	TagRequirements           map[string]StringList  `yaml:"tag_requirements"`
-	PreserveWorkflows         *bool                  `yaml:"preserve_workflows"`
-	GenerateWorkflows         *bool                  `yaml:"generate_workflows"`
-	WorkflowTerramateWrap     *bool                  `yaml:"workflow_terramate_wrap"`
-	WorkflowDisableSafeguards *StringList            `yaml:"workflow_disable_safeguards"`
-	Workflows                 map[string]interface{} `yaml:"workflows"`
-	SortBy                    string                 `yaml:"sort_by"`
-	ProjectNameStrategy       string                 `yaml:"project_name_strategy"`
-	ProjectNamePrefix         string                 `yaml:"project_name_prefix"`
-	ProjectNameDepth          *int                   `yaml:"project_name_depth"`
+	Output                    string                `yaml:"output"`
+	Format                    string                `yaml:"format"`
+	NoHeader                  *bool                 `yaml:"no_header"`
+	LogLevel                  string                `yaml:"log_level"`
+	Autoplan                  *bool                 `yaml:"autoplan"`
+	Parallel                  *bool                 `yaml:"parallel"`
+	Automerge                 *bool                 `yaml:"automerge"`
+	Workflow                  string                `yaml:"workflow"`
+	TerraformVersion          string                `yaml:"terraform_version"`
+	Filter                    string                `yaml:"filter"`
+	FilterPath                string                `yaml:"filter_path"`
+	ExcludeTags               string                `yaml:"exclude_tags"`
+	ExcludePath               string                `yaml:"exclude_path"`
+	Changed                   *bool                 `yaml:"changed"`
+	ChangedBaseRef            string                `yaml:"changed_base_ref"`
+	CreateProjectName         *bool                 `yaml:"create_project_name"`
+	CreateWorkspace           *bool                 `yaml:"create_workspace"`
+	ExecutionOrderGroups      *bool                 `yaml:"execution_order_groups"`
+	DependsOn                 *bool                 `yaml:"depends_on"`
+	WhenModified              []string              `yaml:"when_modified"`
+	ApplyRequirements         []string              `yaml:"apply_requirements"`
+	TagWorkflows              map[string]string     `yaml:"tag_workflows"`
+	TagRequirements           map[string]StringList `yaml:"tag_requirements"`
+	PreserveWorkflows         *bool                 `yaml:"preserve_workflows"`
+	GenerateWorkflows         *bool                 `yaml:"generate_workflows"`
+	WorkflowTerramateWrap     *bool                 `yaml:"workflow_terramate_wrap"`
+	WorkflowDisableSafeguards *StringList           `yaml:"workflow_disable_safeguards"`
+	// Workflows is kept as a YAML node so its values can be written back
+	// exactly as they are in the file.
+	Workflows           yaml.Node `yaml:"workflows"`
+	SortBy              string    `yaml:"sort_by"`
+	ProjectNameStrategy string    `yaml:"project_name_strategy"`
+	ProjectNamePrefix   string    `yaml:"project_name_prefix"`
+	ProjectNameDepth    *int      `yaml:"project_name_depth"`
 }
 
 // StringList is a list of strings that also accepts a single comma-separated

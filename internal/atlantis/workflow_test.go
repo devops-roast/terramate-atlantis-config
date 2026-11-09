@@ -1,6 +1,7 @@
 package atlantis
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -212,5 +213,56 @@ projects:
 
 		_, err := ExistingWorkflows([]byte("version: [3\n"))
 		require.Error(t, err)
+	})
+}
+
+// FuzzPreservedWorkflowsAreStable checks that --preserve-workflows is
+// idempotent: workflows read from a file, written (YAML or JSON) and read
+// back are unchanged, so a second run neither rewrites nor warns.
+func FuzzPreservedWorkflowsAreStable(f *testing.F) {
+	for _, seed := range []string{
+		"workflows:\n  w:\n    plan:\n      steps:\n        - env: {name: A, value: 1.10}\n",
+		"workflows:\n  w: {a: 0x1F, b: 2026-01-01, c: 1.0, d: yes, e: ~, f: !!binary aGk=, g: 1e3, h: -0.0}\n",
+		"workflows:\n  w: &x {a: 1}\n  v: {<<: *x, b: 2}\n",
+		"workflows:\n  w: {1: x, true: y, 'a b': \" c \\n\"}\n",
+		"workflows: ~\n",
+		"workflows: {w: [007, .inf, -.Inf, .nan, 0o17, +1, 1_000]}\n",
+		"workflows:\n  w: &x [*x]\n", "workflows:\n  w: &x {<<: *x}\n", "workflows:\n  w: &x {a: {b: *x}}\n",
+	} {
+		f.Add(seed)
+	}
+	f.Fuzz(func(t *testing.T, content string) {
+		first, err := ExistingWorkflows([]byte(content))
+		if err != nil || len(first) == 0 {
+			t.Skip()
+		}
+		for _, format := range []string{"yaml", "json"} {
+			roundTrip := func(workflows map[string]interface{}) map[string]interface{} {
+				cfg := Config{Version: 3, Workflows: workflows}
+				var out []byte
+				if format == "json" {
+					out, err = MarshalJSON(cfg)
+				} else {
+					out, err = MarshalYAML(cfg, true)
+				}
+				if err != nil {
+					t.Fatalf("%s: marshaling %#v: %v", format, workflows, err)
+				}
+				back, err := ExistingWorkflows(out)
+				if err != nil {
+					t.Fatalf("%s: reading back:\n%s\n%v", format, out, err)
+				}
+				return back
+			}
+			second := roundTrip(first)
+			// YAML keeps every value as written; JSON may turn a scalar
+			// it has no type for into a string once, then stays put.
+			if format == "yaml" && !reflect.DeepEqual(first, second) {
+				t.Fatalf("yaml round trip changed workflows:\n%#v\n%#v", first, second)
+			}
+			if third := roundTrip(second); !reflect.DeepEqual(second, third) {
+				t.Fatalf("%s: second round trip changed workflows:\n%#v\n%#v", format, second, third)
+			}
+		}
 	})
 }

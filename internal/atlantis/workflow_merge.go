@@ -67,19 +67,11 @@ func MergeWorkflows(layers ...WorkflowLayer) (map[string]interface{}, []Workflow
 // ExistingWorkflows extracts the workflows block from an existing
 // atlantis.yaml (YAML or JSON). It returns nil when there is none.
 func ExistingWorkflows(existing []byte) (map[string]interface{}, error) {
-	var doc map[string]interface{}
+	var doc struct {
+		Workflows yaml.Node `yaml:"workflows"`
+	}
 	if err := yaml.Unmarshal(existing, &doc); err != nil {
 		return nil, fmt.Errorf("unmarshaling existing yaml: %w", err)
 	}
-
-	raw, ok := doc["workflows"]
-	if !ok || raw == nil {
-		return nil, nil
-	}
-
-	workflows, ok := raw.(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("workflows must be a map")
-	}
-	return workflows, nil
+	return WorkflowsValue(&doc.Workflows)
 }
