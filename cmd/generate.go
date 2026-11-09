@@ -133,11 +133,13 @@ supported via Terramate globals (atlantis_skip, atlantis_workflow, etc).`,
 // "--apply-requirements 'approved, mergeable'" means the same as the config
 // file list [approved, mergeable]. An empty list stays empty (not nil): it is
 // an explicit value, e.g. --workflow-disable-safeguards= keeps every
-// safeguard.
+// safeguard, and --tag-requirements= drops the config file's mappings.
 func normalizeGenerateOptions(opts *GenerateOptions) {
 	opts.WhenModified = cleanList(opts.WhenModified)
 	opts.ApplyRequirements = cleanList(opts.ApplyRequirements)
 	opts.WorkflowDisableSafeguards = cleanList(opts.WorkflowDisableSafeguards)
+	opts.TagWorkflow = cleanList(opts.TagWorkflow)
+	opts.TagRequirements = cleanList(opts.TagRequirements)
 }
 
 func cleanList(values []string) []string {

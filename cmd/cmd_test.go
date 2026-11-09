@@ -531,3 +531,23 @@ func TestVersionInfoFallsBackToBuildInfo(t *testing.T) {
 	version, commit, date = versionInfo(info)
 	assert.Equal(t, []string{"1.3.0", "def456", "today"}, []string{version, commit, date})
 }
+
+// An empty tag flag value is an explicit "no mappings", like
+// --apply-requirements= for lists: it clears the config file's mappings
+// instead of failing, and a trailing comma adds no empty entry.
+func TestEmptyTagFlagEntriesAreDropped(t *testing.T) {
+	root := newFixture(t)
+	writeFile(t, filepath.Join(root, ".terramate-atlantis.yaml"),
+		"tag_workflows:\n  prod: prod-wf\ntag_requirements:\n  prod: [approved]\n")
+
+	res := run(t, "generate", "--root", root, "--no-header", "--tag-requirements=", "--tag-workflow=")
+	require.Equal(t, 0, res.code, res.stderr)
+	assert.NotContains(t, res.stdout, "apply_requirements")
+	assert.NotContains(t, res.stdout, "workflow:")
+
+	res = run(t, "generate", "--root", root, "--no-header",
+		"--tag-workflow", "prod=other-wf,", "--tag-requirements", " ", "--tag-requirements", "dev=mergeable")
+	require.Equal(t, 0, res.code, res.stderr)
+	assert.Contains(t, res.stdout, "    dir: stacks/prod\n    workflow: other-wf\n")
+	assert.Contains(t, res.stdout, "    dir: stacks/dev\n    apply_requirements:\n      - mergeable\n")
+}

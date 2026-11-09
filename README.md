@@ -99,7 +99,7 @@ The default `auto-strip` naming drops the path prefix every stack shares (`stack
 
 ### Config file
 
-Place `.terramate-atlantis.yaml` (or `.yml`) in your repo root, or point `--config` at another file. Flags you pass explicitly override config file values. Unknown keys are an error, so a typo fails loudly instead of being ignored.
+Place `.terramate-atlantis.yaml` (or `.yml`) in your repo root, or point `--config` at another file. Flags you pass explicitly override config file values. That includes an empty value: `--apply-requirements=` or `--tag-requirements=` replaces the config file's list or mappings with none. Unknown keys are an error, so a typo fails loudly instead of being ignored.
 
 ```yaml
 output: atlantis.yaml
