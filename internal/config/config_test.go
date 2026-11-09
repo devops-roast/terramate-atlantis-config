@@ -278,3 +278,27 @@ func TestKnownKeysCoverEveryField(t *testing.T) {
 		t.Fatalf("expected one key per field: got %d keys for %d fields", got, want)
 	}
 }
+
+// Only the first YAML document used to be read, so keys in any later
+// document were silently ignored, defeating the unknown-key check.
+func TestMultipleDocumentsRejected(t *testing.T) {
+	t.Parallel()
+
+	for _, content := range []string{
+		"---\n---\nformat: json\n",
+		"format: json\n---\nformat: yaml\n",
+		"format: json\n---\nformta: yaml\n",
+	} {
+		if _, err := parse([]byte(content)); err == nil || !strings.Contains(err.Error(), "single YAML document") {
+			t.Errorf("parse(%q): got error %v, want a single-document error", content, err)
+		}
+	}
+
+	// An empty trailing document ("---" at the end) adds nothing.
+	for _, content := range []string{"format: json\n---\n", "---\nformat: json\n", "format: json\n---\n# comment\n"} {
+		cfg, err := parse([]byte(content))
+		if err != nil || cfg.Format != "json" {
+			t.Errorf("parse(%q) = %+v, %v; want format json", content, cfg, err)
+		}
+	}
+}

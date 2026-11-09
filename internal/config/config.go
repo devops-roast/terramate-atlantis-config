@@ -147,7 +147,32 @@ func parse(content []byte) (*FileConfig, error) {
 	if err := dec.Decode(&cfg); err != nil && !errors.Is(err, io.EOF) {
 		return nil, err
 	}
+
+	// Keys in a second document would be silently ignored.
+	for {
+		var extra yaml.Node
+		err := dec.Decode(&extra)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		if !isEmptyDocument(&extra) {
+			return nil, fmt.Errorf("line %d: the config file must be a single YAML document", extra.Line)
+		}
+	}
 	return &cfg, nil
+}
+
+// isEmptyDocument reports whether a decoded document holds no value, like an
+// empty file or one with every key commented out.
+func isEmptyDocument(doc *yaml.Node) bool {
+	if doc.Kind != yaml.DocumentNode || len(doc.Content) == 0 {
+		return true
+	}
+	value := doc.Content[0]
+	return value.Kind == yaml.ScalarNode && value.Tag == "!!null"
 }
 
 // checkKnownKeys reports unknown top-level keys with a readable message.
