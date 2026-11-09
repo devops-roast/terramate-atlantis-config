@@ -25,6 +25,7 @@ Requirements: Docker with Compose v2, Go, `git`, `curl` and `jq`.
 | `scenarios/*.sh`       | One scenario per file, run in file name order                           |
 | `scripts/setup.sh`     | Creates the Gitea users, tokens, test repository and webhook            |
 | `scripts/lib.sh`       | Helpers available to scenarios                                          |
+| `scripts/wait-for-url.sh` | Waits until Gitea or Atlantis answers                              |
 | `scripts/run-test.sh`  | Runs scenarios, prints a summary and dumps logs on failure              |
 
 ## Adding a scenario

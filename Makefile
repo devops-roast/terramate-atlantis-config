@@ -82,8 +82,8 @@ cover-html: test-cover ## Generate HTML coverage report
 	@echo "open coverage.html"
 
 .PHONY: test-integration
-test-integration: ## Run integration tests only
-	go test -v -run TestIntegration ./...
+test-integration: ## Run the fixture and CLI tests in integration_test.go
+	go test -v -count=1 -run 'TestIntegration$$|TestCLI' .
 
 # -------------------------------------------------------
 ##@ Quality
@@ -107,7 +107,7 @@ fmt-check: ## Check formatting (fails if dirty)
 	  || { echo "needs formatting:"; gofmt -l .; exit 1; }
 
 .PHONY: check
-check: vet fmt-check lint test ## Full CI check
+check: vet fmt-check lint test ## vet, fmt-check, lint and test
 
 # -------------------------------------------------------
 ##@ Dependencies

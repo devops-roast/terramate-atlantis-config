@@ -120,7 +120,7 @@ func TestReadmeConfigKeysMatchConfigFile(t *testing.T) {
 // The action and the pre-commit hook pass flags to generate; each one must
 // exist, and the README's action input table must list the action's inputs
 // with their defaults.
-func TestIntegrationsUseExistingFlags(t *testing.T) {
+func TestActionAndHookUseExistingFlags(t *testing.T) {
 	flags := generateFlags(t)
 
 	var action struct {
