@@ -82,7 +82,10 @@ func newGenerateCmd() *cobra.Command {
 		Short: "Generate atlantis.yaml from Terramate stacks",
 		Long: `Discovers all Terramate stacks in the repository and generates
 an atlantis.yaml configuration file. Per-stack customization is
-supported via Terramate globals (atlantis_skip, atlantis_workflow, etc).`,
+supported via Terramate globals (atlantis_skip, atlantis_workflow, etc).
+
+Defaults can be stored in .terramate-atlantis.yaml (or .yml) in --root.
+Flags passed explicitly override the config file.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runGenerate(cmd, opts)
@@ -90,39 +93,39 @@ supported via Terramate globals (atlantis_skip, atlantis_workflow, etc).`,
 	}
 
 	flags := generateCmd.Flags()
-	flags.StringVar(&opts.Root, "root", ".", "Path to the root directory of the Terramate project")
-	flags.StringVar(&opts.Output, "output", "", "Output file path (default: stdout)")
-	flags.StringVar(&opts.Config, "config", "", "Path to configuration file (default: .terramate-atlantis.yaml in root)")
+	flags.StringVar(&opts.Root, "root", ".", "Root directory of the Terramate project")
+	flags.StringVar(&opts.Output, "output", "", "Output file path, or - for stdout (default: stdout)")
+	flags.StringVar(&opts.Config, "config", "", "Config file path (default: .terramate-atlantis.yaml or .yml in --root)")
 	flags.BoolVar(&opts.Autoplan, "autoplan", true, "Enable autoplan for all projects")
 	flags.BoolVar(&opts.Parallel, "parallel", true, "Enable parallel plan and apply")
 	flags.BoolVar(&opts.Automerge, "automerge", false, "Enable automerge")
 	flags.StringVar(&opts.Workflow, "workflow", "", "Default workflow name for all projects")
-	flags.StringVar(&opts.TerraformVersion, "terraform-version", "", "Default terraform version for all projects")
-	flags.StringVar(&opts.Filter, "filter", "", "Filter stacks by tags (Terramate tag filter syntax)")
+	flags.StringVar(&opts.TerraformVersion, "terraform-version", "", "Default Terraform version for all projects")
+	flags.StringVar(&opts.Filter, "filter", "", "Include only stacks matching this Terramate tag filter")
 	flags.StringVar(&opts.FilterPath, "filter-path", "", "Include only stacks at or under directories matching this path glob")
-	flags.StringVar(&opts.ExcludeTags, "exclude-tags", "", "Exclude stacks by tags (Terramate tag filter syntax)")
+	flags.StringVar(&opts.ExcludeTags, "exclude-tags", "", "Exclude stacks matching this Terramate tag filter")
 	flags.StringVar(&opts.ExcludePath, "exclude-path", "", "Exclude stacks at or under directories matching this path glob")
-	flags.BoolVar(&opts.Changed, "changed", false, "Only include stacks changed from the base ref")
-	flags.StringVar(&opts.ChangedBaseRef, "changed-base-ref", "main", "Base git ref for --changed stack detection")
-	flags.BoolVar(&opts.CreateProjectName, "create-project-name", true, "Generate project names from stack paths")
-	flags.BoolVar(&opts.CreateWorkspace, "create-workspace", false, "Generate workspace values from stack paths")
-	flags.BoolVar(&opts.PreserveWorkflows, "preserve-workflows", false, "Preserve workflows from an existing output file")
-	flags.BoolVar(&opts.GenerateWorkflows, "generate-workflows", false, "Generate default Atlantis workflows that run via terramate")
-	flags.BoolVar(&opts.WorkflowTerramateWrap, "workflow-terramate-wrap", true, "Wrap generated workflow terraform commands with terramate run --no-recursive --")
+	flags.BoolVar(&opts.Changed, "changed", false, "Include only stacks changed against --changed-base-ref")
+	flags.StringVar(&opts.ChangedBaseRef, "changed-base-ref", "main", "Git ref that --changed compares against")
+	flags.BoolVar(&opts.CreateProjectName, "create-project-name", true, "Generate a project name from each stack path")
+	flags.BoolVar(&opts.CreateWorkspace, "create-workspace", false, "Set each project's workspace from its stack path (not for the root stack)")
+	flags.BoolVar(&opts.PreserveWorkflows, "preserve-workflows", false, "Keep workflows from the existing output file (not when writing to stdout)")
+	flags.BoolVar(&opts.GenerateWorkflows, "generate-workflows", false, "Add a terramate workflow and use it for projects without another workflow")
+	flags.BoolVar(&opts.WorkflowTerramateWrap, "workflow-terramate-wrap", true, "Run terraform in the generated workflow through terramate run --no-recursive")
 	flags.StringSliceVar(&opts.WorkflowDisableSafeguards, "workflow-disable-safeguards", atlantis.DefaultDisableSafeguards,
 		"Terramate safeguards disabled in generated workflows (comma-separated: "+strings.Join(atlantis.ValidSafeguardKeywords, ", ")+"); pass an empty value to keep all safeguards")
-	flags.BoolVar(&opts.Diff, "diff", false, "Print a unified diff between the existing output file and generated content; exits 1 on changes")
-	flags.BoolVar(&opts.Check, "check", false, "Exit 1 if the output file differs from generated content; combine with --diff to show the changes")
+	flags.BoolVar(&opts.Diff, "diff", false, "Print a unified diff of the output file against the generated content; exit 1 if they differ")
+	flags.BoolVar(&opts.Check, "check", false, "Exit 1 if the output file is missing or differs from the generated content; combine with --diff to show the changes")
 	flags.StringVar(&opts.SortBy, "sort-by", "dir", "Project sort order: "+strings.Join(validSortBy, ", "))
-	flags.BoolVar(&opts.NoHeader, "no-header", false, "Suppress generated file header comment")
+	flags.BoolVar(&opts.NoHeader, "no-header", false, "Omit the generated-by header comment (YAML only)")
 	flags.StringVar(&opts.Format, "format", "yaml", "Output format: "+strings.Join(validFormats, ", "))
-	flags.BoolVar(&opts.ExecutionOrderGroups, "execution-order-groups", false, "Populate execution_order_group based on stack dependencies")
-	flags.BoolVar(&opts.DependsOn, "depends-on", false, "Populate depends_on from stack after/before dependencies")
+	flags.BoolVar(&opts.ExecutionOrderGroups, "execution-order-groups", false, "Set execution_order_group from stack after/before ordering")
+	flags.BoolVar(&opts.DependsOn, "depends-on", false, "Set depends_on (project names) from stack after/before ordering")
 	flags.StringVar(&opts.ProjectNameStrategy, "project-name-strategy", atlantis.NameStrategyAutoStrip, "Naming strategy: "+strings.Join(validNameStrategies, ", "))
 	flags.StringVar(&opts.ProjectNamePrefix, "project-name-prefix", "", "Strip this prefix from stack paths when generating names (auto-strip and stack-name strategies)")
 	flags.IntVar(&opts.ProjectNameDepth, "project-name-depth", 3, "Number of trailing path segments for last-n strategy (at least 1)")
-	flags.StringSliceVar(&opts.WhenModified, "when-modified", []string{"*.tf", "*.tf.json", ".terraform.lock.hcl"}, "Default when_modified patterns")
-	flags.StringSliceVar(&opts.ApplyRequirements, "apply-requirements", nil, "Default apply_requirements entries")
+	flags.StringSliceVar(&opts.WhenModified, "when-modified", []string{"*.tf", "*.tf.json", ".terraform.lock.hcl"}, "Default autoplan when_modified patterns")
+	flags.StringSliceVar(&opts.ApplyRequirements, "apply-requirements", nil, "Default apply_requirements for all projects")
 	flags.StringSliceVar(&opts.TagWorkflow, "tag-workflow", nil, "Tag to workflow mapping (format: tag=workflow; comma-separated or repeated)")
 	flags.StringArrayVar(&opts.TagRequirements, "tag-requirements", nil, "Tag to requirements mapping (format: tag=req1,req2; repeat the flag for more tags)")
 

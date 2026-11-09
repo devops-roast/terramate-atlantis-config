@@ -14,8 +14,13 @@ import (
 
 func newValidateCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "validate [file]",
+		Use:   "validate <file>",
 		Short: "Validate an atlantis.yaml file",
+		Long: `Checks an atlantis.yaml file (YAML or JSON) for problems that make Atlantis
+reject it: the version, project dirs and names, and depends_on entries. It is
+not a full schema check. Exits 1 on any error. A project workflow that the
+file's own workflows don't define is only a warning, since Atlantis also looks
+it up in the server-side repo config.`,
 		Args:  cobra.ExactArgs(1),
 		RunE:  runValidate,
 	}

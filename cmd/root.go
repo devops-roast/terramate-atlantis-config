@@ -39,7 +39,7 @@ infrastructure repositories.`,
 	}
 
 	rootCmd.PersistentFlags().StringVar(&logLevel, "log-level", defaultLogLevel,
-		fmt.Sprintf("Log level for Terramate SDK output: %s", strings.Join(validLogLevels, ", ")))
+		fmt.Sprintf("Terramate SDK log level: %s", strings.Join(validLogLevels, ", ")))
 
 	rootCmd.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error {
 		return fmt.Errorf("%w\nRun '%s --help' for usage", err, cmd.CommandPath())
