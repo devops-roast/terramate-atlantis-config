@@ -449,7 +449,7 @@ jobs:
       - run: echo "${{ steps.atlantis.outputs.projects }} projects"
 ```
 
-The action downloads the release binary for the runner (Linux, macOS or Windows; amd64 or arm64) and verifies it against the release's `checksums.txt`.
+The action downloads the release binary for the runner (Linux, macOS or Windows; amd64 or arm64) and verifies it against the release's `checksums.txt`. On github.com it downloads through the GitHub API with the workflow's token, so it isn't subject to the limits and timeouts of anonymous downloads; on GitHub Enterprise Server, or without `jq` on the runner, it downloads anonymously. Failed requests are retried.
 
 | Input     | Default         | Description                                                                                        |
 | --------- | --------------- | -------------------------------------------------------------------------------------------------- |
@@ -458,6 +458,7 @@ The action downloads the release binary for the runner (Linux, macOS or Windows;
 | `output`  | `atlantis.yaml` | Output file path                                                                                   |
 | `check`   | `false`         | Fail if the output file is out of date                                                             |
 | `args`    |                 | Extra whitespace-separated arguments for `generate`                                                |
+| `token`   | `github.token`  | Token for downloading the release from github.com; `""` downloads anonymously                      |
 
 | Output     | Description                                                  |
 | ---------- | ------------------------------------------------------------ |
