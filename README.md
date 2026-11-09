@@ -168,7 +168,7 @@ Every key matches a `generate` flag:
 | `workflow_disable_safeguards` | list(string)          | `--workflow-disable-safeguards` |
 | `workflows`                   | map of Atlantis workflows | none (config file only)     |
 
-`tag_requirements` values may also be a comma-separated string (`production: approved,mergeable`). `--root`, `--config`, `--check` and `--diff` describe a single invocation and have no config key.
+`tag_requirements` values and `workflow_disable_safeguards` may also be a comma-separated string (`production: approved,mergeable`). `--root`, `--config`, `--check` and `--diff` describe a single invocation and have no config key.
 
 ### CLI flags
 
@@ -202,7 +202,7 @@ Path filters are globs matched against each stack's directory and its parent dir
 | ------------------------- | ------------ | ------------------------------------------------------------- |
 | `--create-project-name`   | `true`       | Generate a project name from the stack path                   |
 | `--project-name-strategy` | `auto-strip` | Naming strategy: `auto-strip`, `stack-name`, `last-n`, `full` |
-| `--project-name-prefix`   |              | Strip this prefix from stack paths when generating names      |
+| `--project-name-prefix`   |              | Strip this prefix from stack paths (`auto-strip`, `stack-name`) |
 | `--project-name-depth`    | `3`          | Number of trailing path segments for `last-n` (at least 1)    |
 | `--create-workspace`      | `false`      | Set workspace from stack path (made a valid Atlantis workspace) |
 | `--sort-by`               | `dir`        | Sort projects by `dir`, `name` or `execution_order_group`     |
@@ -296,7 +296,7 @@ Project names are derived from stack paths. Four strategies control the format:
 - **Names are stable.** They are always computed against every stack in the repository (except those with `atlantis_skip`), so `--changed`, `--filter`, `--filter-path` and `--exclude-*` never rename a project.
 - **Names are unique.** If two stacks would produce the same name, the tool adds parent segments to the name the strategy produced until they differ, and falls back to the full path (then a numeric suffix) as a last resort.
 - **Names are valid.** Characters Atlantis rejects in project names (anything that isn't URL safe, such as spaces) are replaced with `-`.
-- `--project-name-prefix` only strips whole path segments: `stacks/aws/prod` strips `stacks/aws/prod/vpc` but not `stacks/aws/production/vpc`.
+- `--project-name-prefix` replaces the detected common prefix of `auto-strip` and is stripped before `stack-name` picks its parent dirs; `last-n` and `full` ignore it. It only strips whole path segments: `stacks/aws/prod` strips `stacks/aws/prod/vpc` but not `stacks/aws/production/vpc`.
 - A stack at the repository root gets `dir: .` and the name `root` (with `stack-name`, its `name` field, if set).
 
 ### Dependencies
@@ -351,6 +351,8 @@ workflows:
 
 - **`--no-recursive`**: every stack is its own Atlantis project, so a parent stack must not also run its nested child stacks.
 - **`--disable-safeguards=git`**: Terramate's git safeguards don't hold inside an Atlantis checkout. Atlantis plans pull requests whose branch is usually behind the default branch, which makes the `git-out-of-sync` safeguard refuse to run (`current HEAD is out-of-date with the remote base branch`). The pre-workflow hook and Terraform also write files into the checkout (`atlantis.yaml`, plan and lock files), which the `git-untracked` and `git-uncommitted` safeguards are meant to catch. `outdated-code` stays enabled. Pick a different set with `--workflow-disable-safeguards git-out-of-sync,git-untracked`, or keep every safeguard with `--workflow-disable-safeguards=`.
+
+The generated workflow runs the `terraform` found on the Atlantis server's `PATH`. Atlantis installs the versions that projects ask for as `terraform<version>` and only uses them for its built-in steps, so a project's `terraform_version` (`--terraform-version`, `atlantis_terraform_version`) doesn't change the binary a generated workflow runs.
 
 If you write your own workflows that call `terramate run`, add the same flags, or set the environment variable on the Atlantis server:
 
