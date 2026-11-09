@@ -249,7 +249,7 @@ See [Workflows](#workflows) for how workflows are generated, assigned and merged
 
 **Other commands**
 
-- `terramate-atlantis-config validate atlantis.yaml` checks an existing file: `version: 3`, a `dir` for every project, valid and unique project names (and no `name: ""`), every project that shares a dir and workspace with another one has a name, no named project whose dir is a glob pattern (`*`, `?` or `[`), project dirs without `..` (Atlantis rejects it anywhere in a dir, even in `a..b`), and `depends_on` entries that name existing projects. A project whose workflow isn't defined in the file only gets a warning, since Atlantis also looks it up in the server-side repo config. Exits `1` on any error.
+- `terramate-atlantis-config validate atlantis.yaml` checks an existing file: `version: 3`, a `dir` for every project, valid and unique project names (and no `name: ""`), every project that shares a dir and workspace with another one has a name, no named project whose dir is a glob pattern (`*`, `?` or `[`), project dirs without `..` (Atlantis rejects it anywhere in a dir, even in `a..b`), and `depends_on` entries that name existing projects other than the project itself. A project whose workflow isn't defined in the file only gets a warning, since Atlantis also looks it up in the server-side repo config. Exits `1` on any error.
 - `terramate-atlantis-config version` prints the version, commit and build date.
 
 ### Per-stack globals
@@ -263,12 +263,15 @@ Set Terramate globals in any stack to override defaults for that project.
 | `atlantis_autoplan`           | bool         | Override autoplan enabled/disabled                    |
 | `atlantis_terraform_version`  | string       | Override Terraform version                            |
 | `atlantis_when_modified`      | list(string) | Override when_modified patterns                       |
-| `atlantis_extra_deps`         | list(string) | Additional when_modified entries merged with defaults |
+| `atlantis_extra_deps`         | list(string) | Additional when_modified entries merged with defaults (ignored when `atlantis_when_modified` is set) |
 | `atlantis_apply_requirements` | list(string) | Override apply requirements                           |
 
-`atlantis_when_modified = []` and `atlantis_apply_requirements = []` are explicit overrides, not "unset". `apply_requirements: []` is written to the project, which tells Atlantis to require nothing before apply, overriding the server-side requirements as well (when the server's `allowed_overrides` includes `apply_requirements`). Leave the global unset to fall back to tag requirements, `--apply-requirements`, and then the server-side defaults.
+`atlantis_when_modified = []` and `atlantis_apply_requirements = []` are explicit overrides, not "unset". `apply_requirements: []` is written to the project, which tells Atlantis to require nothing before apply, overriding the server-side requirements as well. Leave the global unset to fall back to tag requirements, `--apply-requirements`, and then the server-side defaults.
 
 Any other global starting with `atlantis_` (usually a typo such as `atlantis_workflows`) is ignored with a warning on stderr.
+
+> [!IMPORTANT]
+> Atlantis rejects the whole `atlantis.yaml` when it sets a key the server doesn't allow repositories to override. Projects with a workflow (`atlantis_workflow`, `--workflow`, `--tag-workflow`, `--generate-workflows`) need `allowed_overrides: [workflow]` in the server-side repo config, projects with apply requirements need `apply_requirements` there too, and workflows defined in the file (`--generate-workflows`, `workflows`, `--preserve-workflows`) need `allow_custom_workflows: true`.
 
 ```hcl
 globals {
@@ -331,7 +334,7 @@ stack {
 `--generate-workflows` adds a `terramate` workflow and assigns it to every project that has no other workflow. A project's workflow is chosen in this order:
 
 1. the stack's `atlantis_workflow` global;
-2. a `--tag-workflow` / `tag_workflows` mapping for one of the stack's tags;
+2. a `--tag-workflow` / `tag_workflows` mapping for one of the stack's tags (the first mapped tag, in the order the stack declares its tags; `--tag-requirements` works the same way);
 3. `--workflow` / `workflow`;
 4. the generated `terramate` workflow, when `--generate-workflows` is on.
 
@@ -352,7 +355,7 @@ workflows:
 - **`--no-recursive`**: every stack is its own Atlantis project, so a parent stack must not also run its nested child stacks.
 - **`--disable-safeguards=git`**: Terramate's git safeguards don't hold inside an Atlantis checkout. Atlantis plans pull requests whose branch is usually behind the default branch, which makes the `git-out-of-sync` safeguard refuse to run (`current HEAD is out-of-date with the remote base branch`). The pre-workflow hook and Terraform also write files into the checkout (`atlantis.yaml`, plan and lock files), which the `git-untracked` and `git-uncommitted` safeguards are meant to catch. `outdated-code` stays enabled. Pick a different set with `--workflow-disable-safeguards git-out-of-sync,git-untracked`, or keep every safeguard with `--workflow-disable-safeguards=`.
 
-The generated workflow runs the `terraform` found on the Atlantis server's `PATH`. Atlantis installs the versions that projects ask for as `terraform<version>` and only uses them for its built-in steps, so a project's `terraform_version` (`--terraform-version`, `atlantis_terraform_version`) doesn't change the binary a generated workflow runs.
+Atlantis passes a project's workspace to run steps as `$WORKSPACE`, not `TF_WORKSPACE`, so with `--create-workspace` the generated workflow still runs in Terraform's `default` workspace. The generated workflow runs the `terraform` found on the Atlantis server's `PATH`. Atlantis installs the versions that projects ask for as `terraform<version>` and only uses them for its built-in steps, so a project's `terraform_version` (`--terraform-version`, `atlantis_terraform_version`) doesn't change the binary a generated workflow runs.
 
 If you write your own workflows that call `terramate run`, add the same flags, or set the environment variable on the Atlantis server:
 
@@ -386,7 +389,7 @@ changed: true
 changed_base_ref: origin/main
 ```
 
-Names don't depend on which stacks are included, so a project keeps its name whether or not it changed in a given PR.
+Names don't depend on which stacks are included, so a project keeps its name whether or not it changed in a given PR. `--changed` needs the base ref in the checkout: a shallow or single-branch clone (the default of `actions/checkout`, and of Atlantis' `branch` checkout strategy) doesn't have it, so fetch it first. Since `changed` in the config file applies to every run, including the pre-commit hook and `--check`, prefer passing `--changed` only where you want it.
 
 **Check atlantis.yaml is up to date in CI:**
 
@@ -436,7 +439,7 @@ jobs:
   check-atlantis-config:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: devops-roast/terramate-atlantis-config@v1
         id: atlantis
         with:

@@ -119,7 +119,7 @@ supported via Terramate globals (atlantis_skip, atlantis_workflow, etc).`,
 	flags.BoolVar(&opts.ExecutionOrderGroups, "execution-order-groups", false, "Populate execution_order_group based on stack dependencies")
 	flags.BoolVar(&opts.DependsOn, "depends-on", false, "Populate depends_on from stack after/before dependencies")
 	flags.StringVar(&opts.ProjectNameStrategy, "project-name-strategy", atlantis.NameStrategyAutoStrip, "Naming strategy: "+strings.Join(validNameStrategies, ", "))
-	flags.StringVar(&opts.ProjectNamePrefix, "project-name-prefix", "", "Strip this prefix from stack paths when generating names")
+	flags.StringVar(&opts.ProjectNamePrefix, "project-name-prefix", "", "Strip this prefix from stack paths when generating names (auto-strip and stack-name strategies)")
 	flags.IntVar(&opts.ProjectNameDepth, "project-name-depth", 3, "Number of trailing path segments for last-n strategy (at least 1)")
 	flags.StringSliceVar(&opts.WhenModified, "when-modified", []string{"*.tf", "*.tf.json", ".terraform.lock.hcl"}, "Default when_modified patterns")
 	flags.StringSliceVar(&opts.ApplyRequirements, "apply-requirements", nil, "Default apply_requirements entries")

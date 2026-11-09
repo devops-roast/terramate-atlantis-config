@@ -38,7 +38,7 @@ type Options struct {
 	TagRequirements      map[string][]string
 	SortBy               string
 	ProjectNameStrategy  string // auto-strip, stack-name, last-n, full
-	ProjectNamePrefix    string // explicit prefix to strip (used with any strategy)
+	ProjectNamePrefix    string // explicit prefix to strip (auto-strip and stack-name)
 	ProjectNameDepth     int    // number of trailing path segments to use (for last-n)
 
 	// AllStacks is every stack in the repository, whatever the filters
