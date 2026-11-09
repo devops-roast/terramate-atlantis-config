@@ -366,6 +366,26 @@ func TestConfigFileFlagEquivalents(t *testing.T) {
 		}
 	})
 
+	t.Run("when_modified_from_config", func(t *testing.T) {
+		root := newFixture(t)
+		writeFile(t, filepath.Join(root, configFile), "when_modified_from_config: true\n")
+
+		res := run(t, "generate", "--root", root, "--no-header")
+		require.Equal(t, 0, res.code, res.stderr)
+		for _, p := range parsed(t, res.stdout).Projects {
+			assert.Equal(t, []string{
+				"*.tf", "*.tf.json", ".terraform.lock.hcl",
+				"*.tm.hcl", "*.tm", "../*.tm.hcl", "../*.tm", "../../*.tm.hcl", "../../*.tm",
+			}, p.Autoplan.WhenModified, p.Dir)
+		}
+
+		off := run(t, "generate", "--root", root, "--no-header", "--when-modified-from-config=false")
+		require.Equal(t, 0, off.code, off.stderr)
+		for _, p := range parsed(t, off.stdout).Projects {
+			assert.Equal(t, []string{"*.tf", "*.tf.json", ".terraform.lock.hcl"}, p.Autoplan.WhenModified, p.Dir)
+		}
+	})
+
 	t.Run("unknown key fails with the key name", func(t *testing.T) {
 		root := newFixture(t)
 		writeFile(t, filepath.Join(root, configFile), "chaned: true\n")

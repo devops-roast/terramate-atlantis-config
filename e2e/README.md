@@ -1,15 +1,24 @@
 # E2E tests
 
 The suite runs a real Atlantis server against a local Gitea instance. Atlantis
-calls `terramate-atlantis-config generate` as a pre-workflow hook (see
-`repos.yaml`), so every scenario exercises the whole path: stack discovery,
-generated `atlantis.yaml`, Atlantis autoplan and apply.
+calls `terramate generate` and then `terramate-atlantis-config generate` as
+pre-workflow hooks (see `repos.yaml`), so every scenario exercises the whole
+path: stack discovery, generated `atlantis.yaml`, Atlantis autoplan and apply.
+The stacks under `fixtures/stacks/acme` don't commit their Terraform code; the
+hook generates it, as in a repository that doesn't commit generated files.
 
 ```sh
 make e2e                               # build, start Gitea + Atlantis, run all scenarios
 make -C e2e test                       # re-run scenarios against a running environment
 make -C e2e test SCENARIOS=01-plan-apply
 make -C e2e clean                      # tear down, including volumes
+```
+
+Gitea and Atlantis listen on host ports 3000 and 4141. If those are taken, pick
+others (`GITEA_URL` and `ATLANTIS_URL` follow them):
+
+```sh
+GITEA_HOST_PORT=3300 ATLANTIS_HOST_PORT=4242 make e2e
 ```
 
 Requirements: Docker with Compose v2, Go, `git`, `curl` and `jq`.

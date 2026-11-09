@@ -59,7 +59,7 @@ A project with a `workflow` or `apply_requirements` needs the server to allow it
 | `atlantis_workflow`           | string       | Override workflow for this stack                      | `--workflow`, `--tag-workflow` |
 | `atlantis_autoplan`           | bool         | Override autoplan enabled/disabled                    | `--autoplan` |
 | `atlantis_terraform_version`  | string       | Override Terraform version                            | `--terraform-version` |
-| `atlantis_when_modified`      | list(string) | Override when_modified patterns                       | `--when-modified` |
+| `atlantis_when_modified`      | list(string) | Override when_modified patterns, including the ones `--when-modified-from-config` adds | `--when-modified`, `--when-modified-from-config` |
 | `atlantis_extra_deps`         | list(string) | Additional when_modified entries merged with defaults (ignored when `atlantis_when_modified` is set) | adds to `--when-modified` |
 | `atlantis_apply_requirements` | list(string) | Override apply requirements                           | `--apply-requirements`, `--tag-requirements` |
 

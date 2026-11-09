@@ -84,7 +84,9 @@ globals {
 <details>
 <summary><b>How do I autoplan a stack when a shared module changes?</b></summary>
 
-Add the module's files to the stack's autoplan patterns with `atlantis_extra_deps`. Patterns are relative to the stack's directory:
+For a local module (`source = "../modules/vpc"`), pass `--when-modified-from-config`: it adds every local module a stack calls, and the modules those call, to the stack's autoplan patterns. It covers parent globals and imported files too. See [Autoplan](autoplan.md).
+
+To add files by hand, use `atlantis_extra_deps`. Patterns are relative to the stack's directory:
 
 ```hcl
 globals {
@@ -93,6 +95,13 @@ globals {
 ```
 
 See [Stack globals](stack-globals.md).
+
+</details>
+
+<details>
+<summary><b>Why doesn't a change to a parent's globals plan anything?</b></summary>
+
+Atlantis plans a project when a changed file matches its `when_modified` patterns, which by default only cover `.tf` files in the stack's own directory. If you commit generated code, the generated files change too and match. If Atlantis generates the code, only the parent's `.tm.hcl` file changes. Pass `--when-modified-from-config` to add parent config files, imported files, local modules and `watch` files to every project. `--changed` doesn't help here: Terramate doesn't count a parent's config change as a change of the stacks below it. See [Autoplan](autoplan.md).
 
 </details>
 

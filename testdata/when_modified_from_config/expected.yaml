@@ -1,0 +1,101 @@
+version: 3
+automerge: false
+parallel_plan: true
+parallel_apply: true
+projects:
+  - name: acme-development-eu-west-1-dns
+    dir: stacks/aws/acme-development/eu-west-1/dns
+    autoplan:
+      enabled: true
+      when_modified:
+        - '*.tf'
+        - '*.tf.json'
+        - .terraform.lock.hcl
+        - ../*.tm.hcl
+        - records.yaml
+        - '*.tm.hcl'
+        - '*.tm'
+        - ../*.tm
+        - ../../*.tm.hcl
+        - ../../*.tm
+        - ../../../*.tm.hcl
+        - ../../../*.tm
+        - ../../../../*.tm.hcl
+        - ../../../../*.tm
+        - ../../../../../*.tm.hcl
+        - ../../../../../*.tm
+        - ../../../../../imports/aws.tm.hcl
+        - ../../../../../imports/common/tags.tm.hcl
+  - name: acme-development-eu-west-1-vpc
+    dir: stacks/aws/acme-development/eu-west-1/vpc
+    autoplan:
+      enabled: true
+      when_modified:
+        - '*.tf'
+        - '*.tf.json'
+        - .terraform.lock.hcl
+        - '*.tm.hcl'
+        - '*.tm'
+        - ../*.tm.hcl
+        - ../*.tm
+        - ../../*.tm.hcl
+        - ../../*.tm
+        - ../../../*.tm.hcl
+        - ../../../*.tm
+        - ../../../../*.tm.hcl
+        - ../../../../*.tm
+        - ../../../../../*.tm.hcl
+        - ../../../../../*.tm
+        - ../../../../../imports/aws.tm.hcl
+        - ../../../../../imports/common/tags.tm.hcl
+        - ../../../../../config/vpc.json
+        - ../../../../../modules/subnets/**
+        - ../../../../../modules/vpc/**
+  - name: acme-production-eu-west-1-app
+    dir: stacks/aws/acme-production/eu-west-1/app
+    autoplan:
+      enabled: true
+      when_modified:
+        - '*.tf'
+        - '*.tf.json'
+        - .terraform.lock.hcl
+        - '*.tm.hcl'
+        - '*.tm'
+        - ../*.tm.hcl
+        - ../*.tm
+        - ../../*.tm.hcl
+        - ../../*.tm
+        - ../../../*.tm.hcl
+        - ../../../*.tm
+        - ../../../../*.tm.hcl
+        - ../../../../*.tm
+        - ../../../../../*.tm.hcl
+        - ../../../../../*.tm
+  - name: acme-production-eu-west-1-app-replica
+    dir: stacks/aws/acme-production/eu-west-1/app/replica
+    autoplan:
+      enabled: true
+      when_modified:
+        - '*.tf'
+        - '*.tf.json'
+        - .terraform.lock.hcl
+        - '*.tm.hcl'
+        - '*.tm'
+        - ../*.tm.hcl
+        - ../*.tm
+        - ../../*.tm.hcl
+        - ../../*.tm
+        - ../../../*.tm.hcl
+        - ../../../*.tm
+        - ../../../../*.tm.hcl
+        - ../../../../*.tm
+        - ../../../../../*.tm.hcl
+        - ../../../../../*.tm
+        - ../../../../../../*.tm.hcl
+        - ../../../../../../*.tm
+  - name: acme-production-eu-west-1-legacy
+    dir: stacks/aws/acme-production/eu-west-1/legacy
+    autoplan:
+      enabled: true
+      when_modified:
+        - '*.tf'

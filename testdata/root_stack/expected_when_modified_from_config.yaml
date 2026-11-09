@@ -1,0 +1,32 @@
+version: 3
+automerge: false
+parallel_plan: true
+parallel_apply: true
+projects:
+  - name: root
+    dir: .
+    autoplan:
+      enabled: true
+      when_modified:
+        - '*.tf'
+        - '*.tf.json'
+        - .terraform.lock.hcl
+        - '*.tm.hcl'
+        - '*.tm'
+  - name: infra-vpc
+    dir: infra/vpc
+    execution_order_group: 1
+    depends_on:
+      - root
+    autoplan:
+      enabled: true
+      when_modified:
+        - '*.tf'
+        - '*.tf.json'
+        - .terraform.lock.hcl
+        - '*.tm.hcl'
+        - '*.tm'
+        - ../*.tm.hcl
+        - ../*.tm
+        - ../../*.tm.hcl
+        - ../../*.tm
