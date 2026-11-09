@@ -17,29 +17,28 @@ import (
 	"github.com/devops-roast/terramate-atlantis-config/internal/discovery"
 )
 
-// GenerateOptions holds all CLI flag values for the generate command.
+// GenerateOptions holds the generate settings once flags and the config file
+// are merged.
 type GenerateOptions struct {
-	Root                  string
-	Output                string
-	Config                string
-	Autoplan              bool
-	Parallel              bool
-	Automerge             bool
-	Workflow              string
-	TerraformVersion      string
-	Filter                string
-	FilterPath            string
-	ExcludeTags           string
-	ExcludePath           string
-	Changed               bool
-	ChangedBaseRef        string
-	CreateProjectName     bool
-	CreateWorkspace       bool
-	PreserveWorkflows     bool
-	GenerateWorkflows     bool
-	WorkflowTerramateWrap bool
-	// WorkflowDisableSafeguards is passed to `terramate run --disable-safeguards`
-	// in generated workflows.
+	Root                      string
+	Output                    string
+	Config                    string
+	Autoplan                  bool
+	Parallel                  bool
+	Automerge                 bool
+	Workflow                  string
+	TerraformVersion          string
+	Filter                    string
+	FilterPath                string
+	ExcludeTags               string
+	ExcludePath               string
+	Changed                   bool
+	ChangedBaseRef            string
+	CreateProjectName         bool
+	CreateWorkspace           bool
+	PreserveWorkflows         bool
+	GenerateWorkflows         bool
+	WorkflowTerramateWrap     bool
 	WorkflowDisableSafeguards []string
 	// LogLevel comes from the config file only; the --log-level flag is
 	// handled by the root command.
@@ -132,11 +131,10 @@ Flags passed explicitly override the config file.`,
 	return generateCmd
 }
 
-// normalizeGenerateOptions trims list values and drops empty entries, so
-// "--apply-requirements 'approved, mergeable'" means the same as the config
-// file list [approved, mergeable]. An empty list stays empty (not nil): it is
-// an explicit value, e.g. --workflow-disable-safeguards= keeps every
-// safeguard, and --tag-requirements= drops the config file's mappings.
+// normalizeGenerateOptions trims list entries and drops empty ones, so
+// "--apply-requirements 'approved, mergeable'" equals the config file list
+// [approved, mergeable]. An empty list stays non-nil: it is an explicit value
+// (--workflow-disable-safeguards= keeps every safeguard).
 func normalizeGenerateOptions(opts *GenerateOptions) {
 	opts.WhenModified = cleanList(opts.WhenModified)
 	opts.ApplyRequirements = cleanList(opts.ApplyRequirements)
@@ -419,6 +417,9 @@ func loadFileConfig(rootDir, configPath string) (*internalconfig.FileConfig, err
 	return internalconfig.LoadConfigFromPath(configPath)
 }
 
+// mergeConfig copies config file values into opts for every flag the user
+// didn't pass. Tag mappings are sorted, so the first invalid one reported is
+// always the same.
 func mergeConfig(cmd *cobra.Command, opts *GenerateOptions, cfg *internalconfig.FileConfig) error {
 	if cfg == nil {
 		return nil

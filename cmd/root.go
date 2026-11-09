@@ -1,3 +1,4 @@
+// Package cmd implements the terramate-atlantis-config commands.
 package cmd
 
 import (
@@ -29,8 +30,8 @@ Terramate stacks and their metadata using the Terramate SDK.
 
 Similar to terragrunt-atlantis-config, but for Terramate-managed
 infrastructure repositories.`,
-		// Errors are printed exactly once by Run; usage is only useful for
-		// flag/argument mistakes, which SetFlagErrorFunc handles below.
+		// Run prints each error once. Flag errors point to --help (see
+		// SetFlagErrorFunc) instead of dumping the usage text.
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
@@ -49,8 +50,8 @@ infrastructure repositories.`,
 	return rootCmd
 }
 
-// Run executes the CLI with the given arguments and returns the process exit
-// code. It is the single place where errors are printed.
+// Run executes the CLI and returns the process exit code. It is the only
+// place that prints a returned error.
 func Run(args []string, stdout, stderr io.Writer) int {
 	rootCmd := NewRootCmd()
 	rootCmd.SetArgs(args)
@@ -71,7 +72,6 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	return 1
 }
 
-// Execute runs the CLI against the process arguments and standard streams.
 func Execute() int {
 	return Run(os.Args[1:], os.Stdout, os.Stderr)
 }
@@ -87,6 +87,8 @@ func configureLogging(w io.Writer, level string) error {
 	return nil
 }
 
+// parseLogLevel accepts only validLogLevels; zerolog.ParseLevel alone would
+// also take fatal, panic and numeric levels.
 func parseLogLevel(level string) (zerolog.Level, error) {
 	normalized := strings.ToLower(strings.TrimSpace(level))
 	for _, valid := range validLogLevels {
