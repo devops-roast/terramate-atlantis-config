@@ -33,7 +33,7 @@ func TestGenerateWorkflows(t *testing.T) {
 			name: "wrapped with default safeguards",
 			opts: WorkflowOptions{Enabled: true, WrapWithTerramate: true, DisableSafeguards: DefaultDisableSafeguards},
 			wantPlan: []string{
-				"terramate run --no-recursive --disable-safeguards=git -- terraform init -input=false",
+				"terramate run --no-recursive --disable-safeguards=git -- terraform init -input=false > /dev/null",
 				`terramate run --no-recursive --disable-safeguards=git -- terraform plan -input=false -out="$PLANFILE"`,
 			},
 			wantApply: []string{
@@ -44,7 +44,7 @@ func TestGenerateWorkflows(t *testing.T) {
 			name: "wrapped with all safeguards kept",
 			opts: WorkflowOptions{Enabled: true, WrapWithTerramate: true},
 			wantPlan: []string{
-				"terramate run --no-recursive -- terraform init -input=false",
+				"terramate run --no-recursive -- terraform init -input=false > /dev/null",
 				`terramate run --no-recursive -- terraform plan -input=false -out="$PLANFILE"`,
 			},
 			wantApply: []string{`terramate run --no-recursive -- terraform apply "$PLANFILE"`},
@@ -53,7 +53,7 @@ func TestGenerateWorkflows(t *testing.T) {
 			name: "wrapped with several safeguards disabled",
 			opts: WorkflowOptions{Enabled: true, WrapWithTerramate: true, DisableSafeguards: []string{"git-untracked", "outdated-code"}},
 			wantPlan: []string{
-				"terramate run --no-recursive --disable-safeguards=git-untracked,outdated-code -- terraform init -input=false",
+				"terramate run --no-recursive --disable-safeguards=git-untracked,outdated-code -- terraform init -input=false > /dev/null",
 				`terramate run --no-recursive --disable-safeguards=git-untracked,outdated-code -- terraform plan -input=false -out="$PLANFILE"`,
 			},
 			wantApply: []string{`terramate run --no-recursive --disable-safeguards=git-untracked,outdated-code -- terraform apply "$PLANFILE"`},
@@ -62,7 +62,7 @@ func TestGenerateWorkflows(t *testing.T) {
 			name: "unwrapped ignores safeguards",
 			opts: WorkflowOptions{Enabled: true, WrapWithTerramate: false, DisableSafeguards: DefaultDisableSafeguards},
 			wantPlan: []string{
-				"terraform init -input=false",
+				"terraform init -input=false > /dev/null",
 				`terraform plan -input=false -out="$PLANFILE"`,
 			},
 			wantApply: []string{`terraform apply "$PLANFILE"`},

@@ -92,10 +92,10 @@ func TestGeneratedWorkflowCommands(t *testing.T) {
 		args []string
 		want string
 	}{
-		{"default disables git safeguards", nil, "terramate run --no-recursive --disable-safeguards=git -- terraform init -input=false"},
-		{"empty value keeps safeguards", []string{"--workflow-disable-safeguards="}, "terramate run --no-recursive -- terraform init -input=false"},
-		{"explicit list", []string{"--workflow-disable-safeguards", "git-untracked,git-uncommitted"}, "terramate run --no-recursive --disable-safeguards=git-untracked,git-uncommitted -- terraform init -input=false"},
-		{"unwrapped", []string{"--workflow-terramate-wrap=false"}, "terraform init -input=false"},
+		{"default disables git safeguards", nil, "terramate run --no-recursive --disable-safeguards=git -- terraform init -input=false > /dev/null"},
+		{"empty value keeps safeguards", []string{"--workflow-disable-safeguards="}, "terramate run --no-recursive -- terraform init -input=false > /dev/null"},
+		{"explicit list", []string{"--workflow-disable-safeguards", "git-untracked,git-uncommitted"}, "terramate run --no-recursive --disable-safeguards=git-untracked,git-uncommitted -- terraform init -input=false > /dev/null"},
+		{"unwrapped", []string{"--workflow-terramate-wrap=false"}, "terraform init -input=false > /dev/null"},
 	}
 
 	for _, tt := range tests {
@@ -284,18 +284,18 @@ func TestConfigFileFlagEquivalents(t *testing.T) {
 		res := run(t, "generate", "--root", root, "--no-header")
 		require.Equal(t, 0, res.code, res.stderr)
 		cfg := parsed(t, res.stdout)
-		assert.Equal(t, "terramate run --no-recursive --disable-safeguards=git-untracked -- terraform init -input=false", planRun(t, cfg, "terramate", 0))
+		assert.Equal(t, "terramate run --no-recursive --disable-safeguards=git-untracked -- terraform init -input=false > /dev/null", planRun(t, cfg, "terramate", 0))
 		assert.Equal(t, "terramate", cfg.Projects[0].Workflow)
 
 		writeFile(t, filepath.Join(root, configFile), "generate_workflows: true\nworkflow_terramate_wrap: false\n")
 		res = run(t, "generate", "--root", root, "--no-header")
 		require.Equal(t, 0, res.code, res.stderr)
-		assert.Equal(t, "terraform init -input=false", planRun(t, parsed(t, res.stdout), "terramate", 0))
+		assert.Equal(t, "terraform init -input=false > /dev/null", planRun(t, parsed(t, res.stdout), "terramate", 0))
 
 		writeFile(t, filepath.Join(root, configFile), "generate_workflows: true\nworkflow_disable_safeguards: []\n")
 		res = run(t, "generate", "--root", root, "--no-header")
 		require.Equal(t, 0, res.code, res.stderr)
-		assert.Equal(t, "terramate run --no-recursive -- terraform init -input=false", planRun(t, parsed(t, res.stdout), "terramate", 0))
+		assert.Equal(t, "terramate run --no-recursive -- terraform init -input=false > /dev/null", planRun(t, parsed(t, res.stdout), "terramate", 0))
 
 		writeFile(t, filepath.Join(root, configFile), "generate_workflows: true\nworkflow_disable_safeguards: [nope]\n")
 		res = run(t, "generate", "--root", root, "--no-header")

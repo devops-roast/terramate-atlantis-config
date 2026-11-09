@@ -34,7 +34,7 @@ workflows:
         - run: terramate run --no-recursive --disable-safeguards=git -- terraform apply "$PLANFILE"
     plan:
       steps:
-        - run: terramate run --no-recursive --disable-safeguards=git -- terraform init -input=false
+        - run: terramate run --no-recursive --disable-safeguards=git -- terraform init -input=false > /dev/null
         - run: terramate run --no-recursive --disable-safeguards=git -- terraform plan -input=false -out="$PLANFILE"
 ```
 
@@ -77,6 +77,8 @@ terramate-atlantis-config generate --tag-workflow production=prod-wf,staging=sta
 <dd>Every stack is its own Atlantis project, so a parent stack must not also run its nested child stacks.</dd>
 <dt><code>--disable-safeguards=git</code></dt>
 <dd>Atlantis plans pull requests whose branch is usually behind the default branch. That makes Terramate's <code>git-out-of-sync</code> <a href="https://terramate.io/docs/cli/orchestration/safeguards">safeguard</a> refuse to run (<code>current HEAD is out-of-date with the remote base branch</code>). Terramate skips the <code>git-untracked</code> and <code>git-uncommitted</code> checks under <code>--no-recursive</code>, so disabling all of <code>git</code> changes nothing else. <code>outdated-code</code> stays enabled.</dd>
+<dt><code>&gt; /dev/null</code> on <code>terraform init</code></dt>
+<dd>Atlantis posts a run step's output in a <code>diff</code> block, and GitHub shows each line that starts with <code>-</code> in red, so the <code>- Installing ...</code> lines of a successful <code>init</code> look like errors. The redirect drops only <code>init</code>'s stdout: Terraform writes errors to stderr, so a failed <code>init</code> still shows them, unlike with <code>output: hide</code>.</dd>
 </dl>
 
 Pick a different set of safeguards to disable with `--workflow-disable-safeguards`:
