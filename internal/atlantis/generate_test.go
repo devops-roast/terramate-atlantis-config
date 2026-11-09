@@ -1299,3 +1299,21 @@ func TestDependencyCycleWarningMentionsDependsOn(t *testing.T) {
 		t.Fatalf("unexpected warnings: %q", warnings)
 	}
 }
+
+// JSON output is read and diffed by people: shell commands keep their '&',
+// '<' and '>' instead of &-style escapes.
+func TestMarshalJSONDoesNotEscapeHTML(t *testing.T) {
+	t.Parallel()
+
+	out, err := MarshalJSON(Config{Version: 3, Workflows: map[string]interface{}{
+		"w": map[string]interface{}{"plan": map[string]interface{}{"steps": []interface{}{
+			map[string]interface{}{"run": "a && b > c < d"},
+		}}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(out), `"run": "a && b > c < d"`) {
+		t.Fatalf("JSON escapes shell characters:\n%s", out)
+	}
+}

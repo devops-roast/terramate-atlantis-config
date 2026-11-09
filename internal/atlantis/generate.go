@@ -392,11 +392,16 @@ func styleMultilineStrings(v interface{}) interface{} {
 // end-of-file-fixer hook) leave a generated file unchanged and --check keeps
 // passing.
 func MarshalJSON(cfg Config) ([]byte, error) {
-	out, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetIndent("", "  ")
+	// The file is read and diffed by people; shell commands in workflows
+	// keep their '&', '<' and '>'.
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(cfg); err != nil {
 		return nil, err
 	}
-	return append(out, '\n'), nil
+	return buf.Bytes(), nil
 }
 
 // copyToPtr returns a pointer to a non-nil copy of s.
