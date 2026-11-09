@@ -1,3 +1,5 @@
+// Package discovery loads Terramate stacks, applies the stack filters and
+// reads each stack's atlantis_* globals and after/before ordering.
 package discovery
 
 import (
@@ -75,7 +77,8 @@ type Result struct {
 	AllStacks []StackInfo
 }
 
-// Discover loads stacks from a Terramate root and extracts Atlantis overrides.
+// Discover returns the stacks the filters select, with their overrides, and
+// every stack in the repository. Both lists are sorted by Dir.
 func Discover(opts DiscoverOptions) (Result, error) {
 	rootDir := opts.RootDir
 	if rootDir == "" {
@@ -353,11 +356,11 @@ func resolveOrder(root *config.Root, stack *config.Stack) stackOrder {
 }
 
 // resolveOrderEntries resolves stack.after / stack.before entries to stack
-// directories the same way `terramate run` orders stacks: path entries
-// (relative to the stack, or absolute from the project root) select every
-// stack at or below that directory, and "tag:<filter>" entries select every
-// stack at or below the stacks matching the tag filter. The stack itself is never included.
-// Paths that don't exist are ignored, as Terramate does.
+// dirs the way `terramate run` orders stacks: a path (relative to the stack,
+// or absolute from the project root) selects every stack at or below it, and
+// "tag:<filter>" every stack at or below the stacks matching the filter. The
+// stack itself is never included. Paths that don't exist are ignored, as
+// Terramate does.
 func resolveOrderEntries(root *config.Root, stack *config.Stack, entries []string) ([]string, error) {
 	if len(entries) == 0 {
 		return nil, nil
@@ -420,6 +423,7 @@ func cloneKeepingNil(s []string) []string {
 	return append([]string{}, s...)
 }
 
+// intersectAllowedPaths treats a nil current as "no filter yet".
 func intersectAllowedPaths(current, incoming map[string]struct{}) map[string]struct{} {
 	if current == nil {
 		return incoming

@@ -1,3 +1,5 @@
+// Package globals reads the atlantis_* overrides from a stack's evaluated
+// Terramate globals.
 package globals
 
 import (
@@ -33,7 +35,8 @@ var KnownGlobals = []string{
 	"atlantis_workflow",
 }
 
-// ExtractAtlantisGlobals extracts atlantis_* keys from a globals map.
+// ExtractAtlantisGlobals returns an error for a known global of the wrong
+// type. Unknown atlantis_* globals are listed, not rejected.
 func ExtractAtlantisGlobals(globals map[string]cty.Value) (AtlantisOverrides, error) {
 	var overrides AtlantisOverrides
 
