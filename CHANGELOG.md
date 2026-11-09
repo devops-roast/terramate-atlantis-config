@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.2](https://github.com/devops-roast/terramate-atlantis-config/compare/v1.2.1...v1.2.2) (2026-11-09)
+
+
+### Bug Fixes
+
+* align README, help text and comments with the code ([#16](https://github.com/devops-roast/terramate-atlantis-config/issues/16)) ([359f532](https://github.com/devops-roast/terramate-atlantis-config/commit/359f53242a3186aa9744ad057531b10cfd135570))
+
 ## [1.2.1](https://github.com/devops-roast/terramate-atlantis-config/compare/v1.2.0...v1.2.1) (2026-11-09)
 
 
