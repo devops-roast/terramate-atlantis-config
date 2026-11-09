@@ -3,6 +3,7 @@ package atlantis
 import (
 	"strings"
 	"testing"
+	"unicode"
 
 	"github.com/devops-roast/terramate-atlantis-config/internal/discovery"
 )
@@ -46,6 +47,7 @@ func FuzzProjectNamesUniqueAndValid(f *testing.F) {
 	f.Add("x/y/z\nx-y/z\nx/y-z\nx-y-z\n-/-\n~\nü/ü", "x", 3)
 	f.Add("a\na/a\na/a/a\na-a\na-a-2\na-2", "a", 1)
 	f.Add("root\n.\nstack\n-", "", 1)
+	f.Add("a..b\n~tilde\n-.\nx/~y\n~\n.~", "", 1)
 
 	strategies := []string{NameStrategyAutoStrip, NameStrategyStackName, NameStrategyLastN, NameStrategyFull}
 
@@ -60,6 +62,7 @@ func FuzzProjectNamesUniqueAndValid(f *testing.F) {
 		for _, strategy := range strategies {
 			cfg, err := Generate(stacks, Options{
 				CreateProjectName:   true,
+				CreateWorkspace:     true,
 				ProjectNameStrategy: strategy,
 				ProjectNamePrefix:   prefix,
 				ProjectNameDepth:    depth,
@@ -69,6 +72,9 @@ func FuzzProjectNamesUniqueAndValid(f *testing.F) {
 			}
 			seen := map[string]string{}
 			for _, p := range cfg.Projects {
+				if err := atlantisWorkspaceError(p.Workspace); err != "" {
+					t.Fatalf("dir %q got workspace %q, which Atlantis rejects: %s", p.Dir, p.Workspace, err)
+				}
 				if !ValidProjectName(p.Name) {
 					t.Fatalf("%s: dir %q got invalid name %q", strategy, p.Dir, p.Name)
 				}
@@ -133,4 +139,32 @@ func FuzzProjectNamesAreStable(f *testing.F) {
 			}
 		}
 	})
+}
+
+// atlantisWorkspaceError mirrors Atlantis' ValidateWorkspaceName
+// (server/core/config/valid/workspace.go, v0.49.0) and returns why it
+// rejects workspace, or "".
+func atlantisWorkspaceError(workspace string) string {
+	switch {
+	case workspace == "":
+		return ""
+	case strings.ContainsAny(workspace, `/\`):
+		return `cannot contain '/' or '\'`
+	case strings.Contains(workspace, ".."):
+		return "cannot contain '..'"
+	case workspace == ".":
+		return "cannot be '.'"
+	case strings.HasPrefix(workspace, "-"):
+		return "cannot start with '-'"
+	case strings.HasPrefix(workspace, "~"):
+		return "cannot start with '~'"
+	case strings.Contains(workspace, "$"):
+		return "cannot contain '$'"
+	}
+	for _, r := range workspace {
+		if unicode.IsSpace(r) || unicode.IsControl(r) {
+			return "cannot contain whitespace or control characters"
+		}
+	}
+	return ""
 }

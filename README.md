@@ -204,7 +204,7 @@ Path filters are globs matched against each stack's directory and its parent dir
 | `--project-name-strategy` | `auto-strip` | Naming strategy: `auto-strip`, `stack-name`, `last-n`, `full` |
 | `--project-name-prefix`   |              | Strip this prefix from stack paths when generating names      |
 | `--project-name-depth`    | `3`          | Number of trailing path segments for `last-n` (at least 1)    |
-| `--create-workspace`      | `false`      | Set workspace from stack path                                 |
+| `--create-workspace`      | `false`      | Set workspace from stack path (made a valid Atlantis workspace) |
 | `--sort-by`               | `dir`        | Sort projects by `dir`, `name` or `execution_order_group`     |
 
 **Dependencies**

@@ -95,7 +95,7 @@ func Generate(stacks []discovery.StackInfo, opts Options) (Config, error) {
 		}
 
 		if opts.CreateWorkspace && dir != discovery.RootDir {
-			project.Workspace = sanitizeProjectName(dir)
+			project.Workspace = workspaceName(dir)
 		}
 
 		if stack.Workflow != "" {
@@ -223,6 +223,21 @@ func stackDir(dir string) string {
 		return discovery.RootDir
 	}
 	return dir
+}
+
+// workspaceName derives a workspace from a stack dir. On top of the project
+// name rules, Atlantis rejects a workspace that contains ".." or starts with
+// '~' or '-', or is ".", so those are replaced.
+func workspaceName(dir string) string {
+	workspace := sanitizeProjectName(dir)
+	for strings.Contains(workspace, "..") {
+		workspace = strings.ReplaceAll(workspace, "..", ".-")
+	}
+	workspace = strings.TrimLeft(workspace, "~-")
+	if workspace == "" || workspace == "." {
+		return "stack"
+	}
+	return workspace
 }
 
 // MarshalYAML marshals an Atlantis Config into YAML.
