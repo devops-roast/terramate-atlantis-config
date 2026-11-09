@@ -471,6 +471,9 @@ func mergeConfig(cmd *cobra.Command, opts *GenerateOptions, cfg *internalconfig.
 	if !cmd.Flags().Changed("apply-requirements") && cfg.ApplyRequirements != nil {
 		opts.ApplyRequirements = append([]string(nil), cfg.ApplyRequirements...)
 	}
+	// Tag mappings are validated here, while it is still known that they
+	// come from the config file: once in tag=value form, an error would name
+	// the flag instead.
 	if !cmd.Flags().Changed("tag-workflow") && len(cfg.TagWorkflows) > 0 {
 		tags := make([]string, 0, len(cfg.TagWorkflows))
 		for tag := range cfg.TagWorkflows {
@@ -480,7 +483,14 @@ func mergeConfig(cmd *cobra.Command, opts *GenerateOptions, cfg *internalconfig.
 
 		opts.TagWorkflow = make([]string, 0, len(tags))
 		for _, tag := range tags {
-			opts.TagWorkflow = append(opts.TagWorkflow, fmt.Sprintf("%s=%s", tag, cfg.TagWorkflows[tag]))
+			workflow := strings.TrimSpace(cfg.TagWorkflows[tag])
+			switch {
+			case strings.TrimSpace(tag) == "":
+				return fmt.Errorf("config file tag_workflows: empty tag")
+			case workflow == "":
+				return fmt.Errorf("config file tag_workflows: tag %q has no workflow", tag)
+			}
+			opts.TagWorkflow = append(opts.TagWorkflow, fmt.Sprintf("%s=%s", tag, workflow))
 		}
 	}
 	if !cmd.Flags().Changed("tag-requirements") && len(cfg.TagRequirements) > 0 {
@@ -492,6 +502,12 @@ func mergeConfig(cmd *cobra.Command, opts *GenerateOptions, cfg *internalconfig.
 
 		opts.TagRequirements = make([]string, 0, len(tags))
 		for _, tag := range tags {
+			switch {
+			case strings.TrimSpace(tag) == "":
+				return fmt.Errorf("config file tag_requirements: empty tag")
+			case len(cfg.TagRequirements[tag]) == 0:
+				return fmt.Errorf("config file tag_requirements: tag %q has no requirements", tag)
+			}
 			opts.TagRequirements = append(opts.TagRequirements,
 				fmt.Sprintf("%s=%s", tag, strings.Join(cfg.TagRequirements[tag], ",")))
 		}

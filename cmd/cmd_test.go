@@ -551,3 +551,22 @@ func TestEmptyTagFlagEntriesAreDropped(t *testing.T) {
 	assert.Contains(t, res.stdout, "    dir: stacks/prod\n    workflow: other-wf\n")
 	assert.Contains(t, res.stdout, "    dir: stacks/dev\n    apply_requirements:\n      - mergeable\n")
 }
+
+// Invalid tag mappings from the config file are reported against the config
+// key, not against a flag the user never passed.
+func TestConfigTagMappingErrorsNameConfigKey(t *testing.T) {
+	root := newFixture(t)
+	for content, want := range map[string]string{
+		"tag_requirements:\n  prod: []\n":  `tag_requirements: tag "prod" has no requirements`,
+		"tag_requirements:\n  prod: ~\n":   `tag_requirements: tag "prod" has no requirements`,
+		"tag_workflows:\n  prod: \"\"\n":   `tag_workflows: tag "prod" has no workflow`,
+		"tag_workflows:\n  \" \": wf\n":    `tag_workflows: empty tag`,
+		"tag_requirements:\n  \"\": [a]\n": `tag_requirements: empty tag`,
+	} {
+		writeFile(t, filepath.Join(root, ".terramate-atlantis.yaml"), content)
+		res := run(t, "generate", "--root", root)
+		assert.Equal(t, 1, res.code, content)
+		assert.Contains(t, res.stderr, "config file "+want, content)
+		assert.NotContains(t, res.stderr, "--tag-", content)
+	}
+}
