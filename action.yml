@@ -27,7 +27,7 @@ inputs:
     required: false
     default: ""
   check:
-    description: Run in check mode (fail if the output file is out of date)
+    description: Run in check mode (fail if the output file is missing or out of date)
     required: false
     default: "false"
   token:
@@ -41,7 +41,9 @@ inputs:
 
 outputs:
   projects:
-    description: Number of projects in the generated configuration
+    description: >-
+      Number of projects in the generated configuration, set in every mode
+      (0 if it can't be counted)
     value: ${{ steps.count.outputs.projects }}
   version:
     description: Installed version of terramate-atlantis-config
@@ -159,7 +161,7 @@ runs:
         echo "version=${VERSION}" >>"$GITHUB_OUTPUT"
         "$bin_dir/terramate-atlantis-config" version
 
-    - name: Generate atlantis.yaml
+    - name: Generate Atlantis config
       shell: bash
       env:
         ROOT: ${{ inputs.root }}
