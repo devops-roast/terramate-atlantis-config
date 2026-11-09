@@ -62,14 +62,13 @@ func FuzzMarshalYAMLSurvivesTextFixers(f *testing.F) {
 	for _, seed := range []string{
 		"echo hi", "echo hi ", "echo a\t\necho b", "echo hi\n", "echo hi\n\n", "\n", "\n\n", " \n",
 		"a\r\nb", "a\rb", "a\vb\n", "a\fb", "a \n\n", "\t", "x\n \n", "\ufeffx", "a\u2028b", "a\x85b\n",
+		" echo a\necho b\n", "\techo a\necho b", "\nfirst line is empty",
 	} {
 		f.Add(seed)
 	}
 
 	f.Fuzz(func(t *testing.T, value string) {
-		// A first line starting with whitespace or a line break needs a
-		// literal block indentation indicator, which yaml.v3 can't write.
-		if !utf8.ValidString(value) || value != "" && strings.ContainsRune(" \t\n", rune(value[0])) {
+		if !utf8.ValidString(value) {
 			t.Skip()
 		}
 		cfg, err := Generate([]discovery.StackInfo{{Dir: "a"}}, Options{CreateProjectName: true})

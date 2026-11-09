@@ -227,6 +227,12 @@ func stackDir(dir string) string {
 
 // MarshalYAML marshals an Atlantis Config into YAML.
 func MarshalYAML(cfg Config, addHeader bool) ([]byte, error) {
+	// Workflows come from the config file or the existing output file, so
+	// they may hold any string. Their style is chosen before encoding:
+	// node.Encode writes the value and parses it back, and yaml.v3 can't
+	// read back some of its own literal blocks.
+	cfg.Workflows = styleMultilineStrings(cfg.Workflows).(map[string]interface{})
+
 	var node yaml.Node
 	if err := node.Encode(cfg); err != nil {
 		return nil, err
@@ -250,15 +256,17 @@ func MarshalYAML(cfg Config, addHeader bool) ([]byte, error) {
 }
 
 // quoteTrailingWhitespace double-quotes the multi-line strings that yaml.v3
-// would write as a literal block that doesn't survive text fixers:
+// would write as a literal block that doesn't survive text fixers or doesn't
+// read back as the same value:
 //   - whitespace at the end of a line ends up at the end of an output line,
 //     where trailing whitespace fixers (e.g. the pre-commit
 //     trailing-whitespace hook) strip it;
 //   - trailing blank lines ("a\n\n", kept with "|+") end up at the end of
 //     the file when the string is the last value, where end-of-file fixers
-//     (e.g. end-of-file-fixer) remove them.
+//     (e.g. end-of-file-fixer) remove them;
+//   - a string of only line breaks ("\n") loses one when read back.
 //
-// Either one changes the value and makes --check fail on every run.
+// Any of these changes the value and makes --check fail on every run.
 func quoteTrailingWhitespace(node *yaml.Node) {
 	if node.Kind == yaml.ScalarNode && node.Tag == "!!str" && strings.Contains(node.Value, "\n") &&
 		!literalBlockSafe(node.Value) {
@@ -270,9 +278,11 @@ func quoteTrailingWhitespace(node *yaml.Node) {
 }
 
 // literalBlockSafe reports whether a multi-line string can be written as a
-// literal block, see quoteTrailingWhitespace.
+// literal block, see quoteTrailingWhitespace. A first line that starts with
+// whitespace or a line break needs an indentation indicator, which yaml.v3
+// writes wrongly: the output fails to parse or reads back as another value.
 func literalBlockSafe(value string) bool {
-	if strings.HasSuffix(value, "\n\n") {
+	if value == "" || strings.ContainsRune(" \t\n", rune(value[0])) || strings.HasSuffix(value, "\n\n") {
 		return false
 	}
 	for line := range strings.SplitSeq(value, "\n") {
@@ -281,6 +291,54 @@ func literalBlockSafe(value string) bool {
 		}
 	}
 	return true
+}
+
+// blockString is a multi-line string whose YAML style is chosen before
+// encoding, see MarshalYAML.
+type blockString string
+
+// MarshalYAML implements yaml.Marshaler.
+func (s blockString) MarshalYAML() (interface{}, error) {
+	style := yaml.LiteralStyle
+	if !literalBlockSafe(string(s)) {
+		style = yaml.DoubleQuotedStyle
+	}
+	return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Style: style, Value: string(s)}, nil
+}
+
+// styleMultilineStrings returns a copy of v, a decoded YAML value, in which
+// every multi-line string is a blockString.
+func styleMultilineStrings(v interface{}) interface{} {
+	switch v := v.(type) {
+	case string:
+		if strings.Contains(v, "\n") {
+			return blockString(v)
+		}
+		return v
+	case map[string]interface{}:
+		if v == nil {
+			return map[string]interface{}(nil)
+		}
+		out := make(map[string]interface{}, len(v))
+		for key, value := range v {
+			out[key] = styleMultilineStrings(value)
+		}
+		return out
+	case map[interface{}]interface{}:
+		out := make(map[interface{}]interface{}, len(v))
+		for key, value := range v {
+			out[key] = styleMultilineStrings(value)
+		}
+		return out
+	case []interface{}:
+		out := make([]interface{}, len(v))
+		for i, value := range v {
+			out[i] = styleMultilineStrings(value)
+		}
+		return out
+	default:
+		return v
+	}
 }
 
 // MarshalJSON marshals an Atlantis Config into indented JSON. Like the YAML
