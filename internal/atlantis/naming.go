@@ -11,15 +11,17 @@ import (
 	"github.com/devops-roast/terramate-atlantis-config/internal/discovery"
 )
 
-// ProjectNameStrategy controls how project names are generated from stack paths.
+// Values for Options.ProjectNameStrategy.
 const (
-	// NameStrategyAutoStrip auto-detects and removes the longest common path prefix.
+	// NameStrategyAutoStrip strips ProjectNamePrefix, or else the longest
+	// path prefix every stack shares.
 	NameStrategyAutoStrip = "auto-strip"
-	// NameStrategyStackName uses the stack's metadata name, prefixed with parent dirs for uniqueness.
+	// NameStrategyStackName uses the stack's name (or dir name), prefixed
+	// with up to 3 parent dirs.
 	NameStrategyStackName = "stack-name"
-	// NameStrategyLastN uses only the last N path segments.
+	// NameStrategyLastN uses the last ProjectNameDepth path segments.
 	NameStrategyLastN = "last-n"
-	// NameStrategyFull uses the full directory path (original behavior).
+	// NameStrategyFull uses the whole path.
 	NameStrategyFull = "full"
 )
 
@@ -40,9 +42,10 @@ func ValidProjectName(name string) bool {
 	return withoutSlashes == url.QueryEscape(withoutSlashes)
 }
 
-// sanitizeProjectName turns a path into a project name Atlantis accepts:
-// '/' becomes '-', any other character Atlantis rejects becomes '-', and
-// leading dashes are trimmed.
+// sanitizeProjectName turns a path into a project name Atlantis accepts: any
+// character that isn't URL safe, '/' included, becomes '-', and leading
+// dashes are trimmed. The result may be empty or equal another path's, so
+// callers must run ensureUniqueNames.
 func sanitizeProjectName(p string) string {
 	var b strings.Builder
 	b.Grow(len(p))
@@ -147,6 +150,8 @@ func (n *projectNamer) nameFor(dir string) string {
 	return sanitizeProjectName(namingPath(dir))
 }
 
+// buildUniqueNames maps each stack dir to its name; the names are unique and
+// valid after this returns.
 func (n *projectNamer) buildUniqueNames(stacks []discovery.StackInfo) map[string]string {
 	rawNames := make(map[string]string, len(stacks))
 	for _, s := range stacks {
@@ -383,6 +388,7 @@ func (n *projectNamer) lastNRaw(dir string) string {
 	return trailingName(dir, n.lastNDepth())
 }
 
+// lastNDepth defaults a zero ProjectNameDepth to the CLI default of 3.
 func (n *projectNamer) lastNDepth() int {
 	if n.depth <= 0 {
 		return 3

@@ -18,15 +18,14 @@ type Scalar struct {
 	Value string
 }
 
-// MarshalYAML implements yaml.Marshaler.
 func (s Scalar) MarshalYAML() (interface{}, error) {
 	return &yaml.Node{Kind: yaml.ScalarNode, Tag: s.Tag, Value: s.Value}, nil
 }
 
 var jsonNumber = regexp.MustCompile(`^-?(0|[1-9]\d*)(\.\d+)?([eE][+-]?\d+)?$`)
 
-// MarshalJSON implements json.Marshaler. Numbers whose text is a JSON number
-// and booleans keep their type; anything else becomes the text as written.
+// MarshalJSON keeps numbers whose text is a JSON number and booleans typed;
+// anything else becomes the text as written.
 func (s Scalar) MarshalJSON() ([]byte, error) {
 	switch {
 	case (s.Tag == "!!int" || s.Tag == "!!float") && jsonNumber.MatchString(s.Value):
@@ -136,7 +135,8 @@ func mergeMapping(out map[string]interface{}, node *yaml.Node, expanding map[*ya
 	return nil
 }
 
-// WorkflowsValue converts a `workflows` node into workflows by name.
+// WorkflowsValue converts a `workflows` node into workflows by name; a missing
+// or null node gives nil.
 func WorkflowsValue(node *yaml.Node) (map[string]interface{}, error) {
 	if node == nil || node.Kind == 0 {
 		return nil, nil

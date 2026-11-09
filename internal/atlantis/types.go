@@ -1,6 +1,5 @@
 package atlantis
 
-// Config represents a complete atlantis.yaml configuration.
 type Config struct {
 	Version       int                    `yaml:"version" json:"version"`
 	Automerge     bool                   `yaml:"automerge" json:"automerge"`
@@ -10,7 +9,6 @@ type Config struct {
 	Workflows     map[string]interface{} `yaml:"workflows,omitempty" json:"workflows,omitempty"`
 }
 
-// Project represents a single Atlantis project entry.
 type Project struct {
 	Name                string   `yaml:"name,omitempty" json:"name,omitempty"`
 	Dir                 string   `yaml:"dir" json:"dir"`
@@ -26,7 +24,6 @@ type Project struct {
 	Autoplan          Autoplan  `yaml:"autoplan" json:"autoplan"`
 }
 
-// Autoplan configures automatic planning behavior.
 type Autoplan struct {
 	Enabled      bool     `yaml:"enabled" json:"enabled"`
 	WhenModified []string `yaml:"when_modified" json:"when_modified"`
@@ -52,7 +49,6 @@ type autoplanYAML struct {
 	WhenModified []interface{} `yaml:"when_modified"`
 }
 
-// MarshalYAML implements yaml.Marshaler.
 func (p Project) MarshalYAML() (interface{}, error) {
 	optional := func(s string) interface{} {
 		if s == "" {
@@ -88,6 +84,8 @@ func (p Project) MarshalYAML() (interface{}, error) {
 		}
 		out.ApplyRequirements = &requirements
 	}
+	// Atlantis reads a missing or null when_modified as its default
+	// patterns, so an empty list must be written as [].
 	if out.Autoplan.WhenModified == nil {
 		out.Autoplan.WhenModified = []interface{}{}
 	}

@@ -1,3 +1,5 @@
+// Package atlantis turns discovered stacks into an Atlantis repo config
+// (atlantis.yaml): projects, names, ordering and workflows.
 package atlantis
 
 import (
@@ -13,15 +15,13 @@ import (
 	"github.com/devops-roast/terramate-atlantis-config/internal/discovery"
 )
 
-// ErrDependsOnRequiresNames is returned when depends_on generation is
-// requested without project names. Atlantis matches depends_on entries
-// against project names, so a depends_on list is meaningless without them.
+// ErrDependsOnRequiresNames is returned for DependsOn without
+// CreateProjectName.
 var ErrDependsOnRequiresNames = errors.New(
 	"depends_on requires project names: Atlantis matches depends_on entries against project names, " +
 		"so --depends-on cannot be used with --create-project-name=false",
 )
 
-// Options configures Atlantis config generation behavior.
 type Options struct {
 	Autoplan             bool
 	Parallel             bool
@@ -61,7 +61,8 @@ func (o Options) warnf(format string, args ...any) {
 	}
 }
 
-// Generate builds an Atlantis config from discovered stack metadata.
+// Generate builds the config for stacks. Skipped stacks get no project, and
+// project names are unique and computed against opts.AllStacks.
 func Generate(stacks []discovery.StackInfo, opts Options) (Config, error) {
 	if opts.DependsOn && !opts.CreateProjectName {
 		return Config{}, ErrDependsOnRequiresNames
@@ -117,8 +118,8 @@ func Generate(stacks []discovery.StackInfo, opts Options) (Config, error) {
 		}
 
 		if stack.WhenModified != nil {
-			// Non-nil even when empty: JSON would render nil as null, which
-			// Atlantis reads as "use its default patterns".
+			// Copied non-nil even when empty: JSON renders nil as null, which
+			// Atlantis reads as "use the default patterns".
 			project.Autoplan.WhenModified = append([]string{}, stack.WhenModified...)
 		} else {
 			project.Autoplan.WhenModified = mergeWhenModified(opts.WhenModified, stack.ExtraDeps)
@@ -251,7 +252,8 @@ type yamlConfig struct {
 	Workflows     interface{} `yaml:"workflows,omitempty"`
 }
 
-// MarshalYAML marshals an Atlantis Config into YAML.
+// MarshalYAML encodes cfg as YAML that pre-commit text fixers leave unchanged
+// (see quoteUnsafeLiteralBlocks), after the generated-by header if addHeader.
 func MarshalYAML(cfg Config, addHeader bool) ([]byte, error) {
 	// Workflows come from the config file or the existing output file, so
 	// they may hold any string. Their style is chosen before encoding:
@@ -332,7 +334,6 @@ func literalBlockSafe(value string) bool {
 // encoding, see MarshalYAML.
 type blockString string
 
-// MarshalYAML implements yaml.Marshaler.
 func (s blockString) MarshalYAML() (interface{}, error) {
 	style := yaml.LiteralStyle
 	if !literalBlockSafe(string(s)) {
@@ -387,10 +388,9 @@ func styleMultilineStrings(v interface{}) interface{} {
 	}
 }
 
-// MarshalJSON marshals an Atlantis Config into indented JSON. Like the YAML
-// output it ends with a newline, so end-of-file fixers (e.g. the pre-commit
-// end-of-file-fixer hook) leave a generated file unchanged and --check keeps
-// passing.
+// MarshalJSON encodes cfg as indented JSON. It ends with a newline, so
+// end-of-file fixers (e.g. pre-commit's end-of-file-fixer) leave the file
+// unchanged and --check keeps passing.
 func MarshalJSON(cfg Config) ([]byte, error) {
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
