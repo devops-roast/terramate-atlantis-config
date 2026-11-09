@@ -1,12 +1,8 @@
 <div align="center">
 
-# terramate-atlantis-config
+<img src="docs/assets/banner.jpg" alt="terramate-atlantis-config: generate atlantis.yaml from your Terramate stacks" width="100%">
 
-**Generate the Atlantis `atlantis.yaml` from your Terramate stacks.**
-
-[![CI](https://github.com/devops-roast/terramate-atlantis-config/actions/workflows/ci.yml/badge.svg)](https://github.com/devops-roast/terramate-atlantis-config/actions)
-[![Release](https://img.shields.io/github/v/release/devops-roast/terramate-atlantis-config)](https://github.com/devops-roast/terramate-atlantis-config/releases)
-[![Go Report Card](https://goreportcard.com/badge/github.com/devops-roast/terramate-atlantis-config)](https://goreportcard.com/report/github.com/devops-roast/terramate-atlantis-config)
+[![CI](https://github.com/devops-roast/terramate-atlantis-config/actions/workflows/ci.yml/badge.svg)](https://github.com/devops-roast/terramate-atlantis-config/actions) [![Release](https://img.shields.io/github/v/release/devops-roast/terramate-atlantis-config)](https://github.com/devops-roast/terramate-atlantis-config/releases) [![Go Report Card](https://goreportcard.com/badge/github.com/devops-roast/terramate-atlantis-config)](https://goreportcard.com/report/github.com/devops-roast/terramate-atlantis-config)
 
 [What it does](#what-it-does) · [Install](#install) · [Quickstart](#quickstart) · [Documentation](#documentation) · [FAQ](docs/faq.md)
 
