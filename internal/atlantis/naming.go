@@ -11,15 +11,17 @@ import (
 	"github.com/devops-roast/terramate-atlantis-config/internal/discovery"
 )
 
-// ProjectNameStrategy controls how project names are generated from stack paths.
+// Values for Options.ProjectNameStrategy.
 const (
-	// NameStrategyAutoStrip auto-detects and removes the longest common path prefix.
+	// NameStrategyAutoStrip strips ProjectNamePrefix, or else the longest
+	// path prefix every stack shares.
 	NameStrategyAutoStrip = "auto-strip"
-	// NameStrategyStackName uses the stack's metadata name, prefixed with parent dirs for uniqueness.
+	// NameStrategyStackName uses the stack's name (or dir name), prefixed
+	// with up to 3 parent dirs.
 	NameStrategyStackName = "stack-name"
-	// NameStrategyLastN uses only the last N path segments.
+	// NameStrategyLastN uses the last ProjectNameDepth path segments.
 	NameStrategyLastN = "last-n"
-	// NameStrategyFull uses the full directory path (original behavior).
+	// NameStrategyFull uses the whole path.
 	NameStrategyFull = "full"
 )
 
@@ -40,9 +42,10 @@ func ValidProjectName(name string) bool {
 	return withoutSlashes == url.QueryEscape(withoutSlashes)
 }
 
-// sanitizeProjectName turns a path into a project name Atlantis accepts:
-// '/' becomes '-', any other character Atlantis rejects becomes '-', and
-// leading dashes are trimmed.
+// sanitizeProjectName turns a path into a project name Atlantis accepts: any
+// character that isn't URL safe, '/' included, becomes '-', and leading
+// dashes are trimmed. The result may be empty or equal another path's, so
+// callers must run ensureUniqueNames.
 func sanitizeProjectName(p string) string {
 	var b strings.Builder
 	b.Grow(len(p))
@@ -147,6 +150,8 @@ func (n *projectNamer) nameFor(dir string) string {
 	return sanitizeProjectName(namingPath(dir))
 }
 
+// buildUniqueNames maps each stack dir to its name; the names are unique and
+// valid after this returns.
 func (n *projectNamer) buildUniqueNames(stacks []discovery.StackInfo) map[string]string {
 	rawNames := make(map[string]string, len(stacks))
 	for _, s := range stacks {
@@ -267,8 +272,9 @@ func trailingName(dir string, depth int) string {
 // Disambiguation only compares stacks whose raw names collide, so its output
 // can still clash with another stack's name, and sanitizing can map distinct
 // paths ("a/b" and "a-b") to the same name. Any remaining clash first falls
-// back to the full path, and if that still clashes, a numeric suffix is added
-// in dir order so the result is deterministic.
+// back to the full path ("stack" if that sanitizes to nothing), and if that
+// still clashes, a numeric suffix is added in dir order so the result is
+// deterministic.
 func ensureUniqueNames(names map[string]string) {
 	dirs := make([]string, 0, len(names))
 	for dir := range names {
@@ -383,6 +389,7 @@ func (n *projectNamer) lastNRaw(dir string) string {
 	return trailingName(dir, n.lastNDepth())
 }
 
+// lastNDepth defaults a ProjectNameDepth below 1 to the CLI default of 3.
 func (n *projectNamer) lastNDepth() int {
 	if n.depth <= 0 {
 		return 3
@@ -393,7 +400,7 @@ func (n *projectNamer) lastNDepth() int {
 // detectCommonPrefix returns the longest path prefix shared by every stack
 // dir, on segment boundaries (the root stack is ignored). Dirs are sorted so
 // a parent stack comes first and may itself be the prefix of its children;
-// autoStripRaw then falls back to the full path for it.
+// autoStripPath then falls back to the full path for it.
 func detectCommonPrefix(stacks []discovery.StackInfo) string {
 	dirs := make([]string, 0, len(stacks))
 	for _, s := range stacks {

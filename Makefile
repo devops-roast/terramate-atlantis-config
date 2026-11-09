@@ -35,7 +35,7 @@ build: ## Build the binary
 	go build -ldflags '$(LDFLAGS)' -o $(BINARY) .
 
 .PHONY: build-all
-build-all: ## Build for all platforms
+build-all: ## Cross-compile for PLATFORMS (the CI build matrix)
 	@$(foreach platform,$(PLATFORMS), \
 	  $(eval OS   = $(word 1,$(subst /, ,$(platform)))) \
 	  $(eval ARCH = $(word 2,$(subst /, ,$(platform)))) \
@@ -46,7 +46,7 @@ build-all: ## Build for all platforms
 	)
 
 .PHONY: install
-install: ## Install to $$GOPATH/bin
+install: ## Install to $(go env GOPATH)/bin
 	go build -ldflags '$(LDFLAGS)' \
 	  -o $$(go env GOPATH)/bin/$(BINARY) .
 
@@ -82,8 +82,8 @@ cover-html: test-cover ## Generate HTML coverage report
 	@echo "open coverage.html"
 
 .PHONY: test-integration
-test-integration: ## Run integration tests only
-	go test -v -run TestIntegration ./...
+test-integration: ## Run the fixture and CLI tests in integration_test.go
+	go test -v -count=1 -run 'TestIntegration$$|TestCLI' .
 
 # -------------------------------------------------------
 ##@ Quality
@@ -107,7 +107,7 @@ fmt-check: ## Check formatting (fails if dirty)
 	  || { echo "needs formatting:"; gofmt -l .; exit 1; }
 
 .PHONY: check
-check: vet fmt-check lint test ## Full CI check
+check: vet fmt-check lint test ## vet, fmt-check, lint and test
 
 # -------------------------------------------------------
 ##@ Dependencies
@@ -142,9 +142,8 @@ release: ## Release via goreleaser
 # -------------------------------------------------------
 
 .PHONY: generate-example
-generate-example: build ## Generate sample atlantis.yaml
-	./$(BINARY) generate --root . 2>/dev/null \
-	  || echo "no stacks found in current directory"
+generate-example: build ## Print atlantis.yaml for testdata/multi
+	./$(BINARY) generate --root testdata/multi
 
 # -------------------------------------------------------
 ##@ E2E

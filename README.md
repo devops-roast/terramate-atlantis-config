@@ -14,7 +14,7 @@ Generate `atlantis.yaml` from your Terramate stacks.
 
 ## 📚 Description
 
-**terramate-atlantis-config** reads your [Terramate](https://terramate.io) stack definitions and git history, then generates an `atlantis.yaml` configuration file for [Atlantis](https://www.runatlantis.io). It's built for teams running Terramate alongside Atlantis who want to stop hand-maintaining project lists as their stack count grows.
+**terramate-atlantis-config** reads your [Terramate](https://terramate.io) stack definitions (and, with `--changed`, git history), then generates an `atlantis.yaml` configuration file for [Atlantis](https://www.runatlantis.io). It's built for teams running Terramate alongside Atlantis who want to stop hand-maintaining project lists as their stack count grows.
 
 Instead of updating `atlantis.yaml` every time you add, rename, or remove a stack, you run this tool in CI and let it do the bookkeeping. It does not run Terraform or modify any stack files.
 
@@ -23,10 +23,10 @@ Instead of updating `atlantis.yaml` every time you add, rename, or remove a stac
 - **Stack discovery via Terramate SDK:** walks your repo and collects all stacks, respecting tag and path filters.
 - **Per-stack overrides via globals:** set `atlantis_workflow`, `atlantis_skip`, and more directly in any stack's globals block.
 - **Change detection:** pass `--changed` to only include stacks that differ from a base git ref.
-- **Dependency tracking and execution ordering:** reads Terramate's dependency graph to populate `depends_on` and execution order groups.
+- **Dependency tracking and execution ordering:** reads each stack's `after` and `before` ordering to populate `depends_on` and execution order groups.
 - **Configurable project naming with auto-disambiguation:** four strategies for deriving project names from stack paths, with automatic collision resolution.
 - **CI modes:** `--check` exits non-zero if the output would change; `--diff` prints a unified diff.
-- **Config file support:** store defaults in `.terramate-atlantis.yaml` at your repo root.
+- **Config file support:** store defaults in `.terramate-atlantis.yaml` next to your Terramate root.
 - **Pre-commit hook:** regenerate on every commit without any extra CI step.
 
 ## 🔧 Install
@@ -43,7 +43,7 @@ go install github.com/devops-roast/terramate-atlantis-config@latest
 brew install --cask devops-roast/tap/terramate-atlantis-config
 ```
 
-**Binary download:** grab the latest from [GitHub Releases](https://github.com/devops-roast/terramate-atlantis-config/releases) and put it on your `PATH`.
+**Binary download:** grab the latest archive, `.deb` or `.rpm` from [GitHub Releases](https://github.com/devops-roast/terramate-atlantis-config/releases) and put it on your `PATH`.
 
 **From source:**
 
@@ -57,9 +57,9 @@ make install
 
 You need:
 
-- [Terramate](https://terramate.io/docs/cli/installation) installed and a repo with at least one stack
+- a [Terramate](https://terramate.io) repository with at least one stack, and `git` (the tool reads stacks with the Terramate SDK; the `terramate` CLI is only needed on the Atlantis server, for `--generate-workflows`)
 - [Atlantis](https://www.runatlantis.io/docs/installation-guide.html) set up to consume `atlantis.yaml`
-- Go 1.25+ (if installing from source)
+- Go 1.25.5+ (for `go install` or building from source)
 
 Run this from your repo root:
 
@@ -99,7 +99,7 @@ The default `auto-strip` naming drops the path prefix every stack shares (`stack
 
 ### Config file
 
-Place `.terramate-atlantis.yaml` (or `.yml`) in your repo root, or point `--config` at another file. Flags you pass explicitly override config file values. That includes an empty value: `--apply-requirements=` or `--tag-requirements=` replaces the config file's list or mappings with none. Unknown keys are an error, so a typo fails loudly instead of being ignored.
+Place `.terramate-atlantis.yaml` (or `.yml`; `.yaml` wins if both exist) in the `--root` directory, or point `--config` at another file. Flags you pass explicitly override config file values. That includes an empty value: `--apply-requirements=` or `--tag-requirements=` replaces the config file's list or mappings with none. Unknown keys are an error, so a typo fails loudly instead of being ignored.
 
 ```yaml
 output: atlantis.yaml
@@ -124,11 +124,11 @@ workflows:
   prod-workflow:
     plan:
       steps:
-        - run: terramate run --no-recursive -- terraform init -input=false
-        - run: terramate run --no-recursive -- terraform plan -input=false -out="$PLANFILE"
+        - run: terramate run --no-recursive --disable-safeguards=git -- terraform init -input=false
+        - run: terramate run --no-recursive --disable-safeguards=git -- terraform plan -input=false -out="$PLANFILE"
     apply:
       steps:
-        - run: terramate run --no-recursive -- terraform apply "$PLANFILE"
+        - run: terramate run --no-recursive --disable-safeguards=git -- terraform apply "$PLANFILE"
 ```
 
 Every key matches a `generate` flag:
@@ -168,7 +168,7 @@ Every key matches a `generate` flag:
 | `workflow_disable_safeguards` | list(string)          | `--workflow-disable-safeguards` |
 | `workflows`                   | map of Atlantis workflows | none (config file only)     |
 
-`tag_requirements` values and `workflow_disable_safeguards` may also be a comma-separated string (`production: approved,mergeable`). `--root`, `--config`, `--check` and `--diff` describe a single invocation and have no config key.
+`tag_requirements` values and `workflow_disable_safeguards` may also be a comma-separated string (`production: approved,mergeable`). A key set to null, or a string key set to `""`, is the same as leaving it out; an empty list (`when_modified: []`, and `workflow_disable_safeguards: ""`) is an explicit value, like `--when-modified=`. `output` is relative to the current directory, not to `--root`. `--root`, `--config`, `--check` and `--diff` describe a single invocation and have no config key.
 
 ### CLI flags
 
@@ -176,43 +176,45 @@ Every key matches a `generate` flag:
 
 | Flag          | Default | Description                                                                         |
 | ------------- | ------- | ----------------------------------------------------------------------------------- |
-| `--root`      | `.`     | Root directory to search for stacks                                                 |
-| `--output`    | stdout  | Output file path                                                                    |
+| `--root`      | `.`     | Root directory of the Terramate project; project dirs are relative to it, so point it at the repo root Atlantis checks out |
+| `--output`    | stdout  | Output file path, or `-` for stdout                                                 |
 | `--format`    | `yaml`  | Output format: `yaml` or `json`                                                     |
-| `--no-header` | `false` | Omit the generated-by header comment                                                |
-| `--config`    |         | Path to config file                                                                 |
+| `--no-header` | `false` | Omit the generated-by header comment (YAML only)                                    |
+| `--config`    |         | Config file path (default: `.terramate-atlantis.yaml` or `.yml` in `--root`)       |
 | `--log-level` | `warn`  | Terramate SDK log level: `trace`, `debug`, `info`, `warn`, `error`, `disabled`      |
 
-Logs go to stderr and never mix with the generated config on stdout.
+Logs go to stderr and never mix with the generated config on stdout. `--log-level` only controls Terramate SDK messages; this tool's own warnings always print.
 
 **Filtering**
 
 | Flag             | Default | Description                                                       |
 | ---------------- | ------- | ----------------------------------------------------------------- |
-| `--filter`       |         | Include only stacks matching this tag filter                      |
+| `--filter`       |         | Include only stacks matching this Terramate tag filter            |
 | `--filter-path`  |         | Include only stacks at or under directories matching this glob    |
-| `--exclude-tags` |         | Exclude stacks with these tags                                    |
+| `--exclude-tags` |         | Exclude stacks matching this Terramate tag filter                 |
 | `--exclude-path` |         | Exclude stacks at or under directories matching this glob         |
 
-Path filters are globs matched against each stack's directory and its parent directories, so a pattern selects everything nested under what it matches: `infra` selects `infra`, `infra/vpc` and `infra/vpc/subnet`, and `*/vpc` selects `prod/vpc` and `prod/vpc/subnet`. `*` matches within one path segment, and `**` matches any number of segments, including none (`**/vpc` also selects a top-level `vpc`). `?`, `[...]` classes and `\` escapes follow Go's [`path.Match`](https://pkg.go.dev/path#Match) (on Windows, `\` is a path separator instead). Patterns are relative to `--root`: `infra`, `/infra`, `./infra` and `infra/` are the same filter, and a pattern that leads outside it (`../infra`) is an error. A stack at the root itself is selected by `.` and by patterns that match any path, such as `**`; it has no directory name, so `.*` or `?` don't select it.
+Path filters are globs matched against each stack's directory and its parent directories, so a pattern selects everything nested under what it matches: `infra` selects `infra`, `infra/vpc` and `infra/vpc/subnet`, and `*/vpc` selects `prod/vpc` and `prod/vpc/subnet`. `*` matches within one path segment, and `**` matches any number of segments, including none (`**/vpc` also selects a top-level `vpc`). `?`, `[...]` classes and `\` escapes follow Go's [`path.Match`](https://pkg.go.dev/path#Match) (on Windows, `\` is a path separator instead). Patterns are relative to `--root`: `infra`, `/infra`, `./infra` and `infra/` are the same filter, and a pattern that leads outside it (`../infra`) is an error. A stack at the root itself is selected by `.` and by patterns that also match an empty path, such as `*` and `**`; it has no directory name, so `.*` or `?` don't select it. `.` selects only the root stack, and `/` selects every stack.
+
+A stack is generated only if it passes every include filter (`--filter`, `--filter-path`, `--changed`) and no exclude filter. A stack that is filtered out can't fail the run through invalid `atlantis_*` globals or ordering entries; a syntax error in any Terramate file still fails it, and `atlantis_skip` doesn't excuse invalid `atlantis_*` globals on a selected stack.
 
 **Naming**
 
 | Flag                      | Default      | Description                                                   |
 | ------------------------- | ------------ | ------------------------------------------------------------- |
-| `--create-project-name`   | `true`       | Generate a project name from the stack path                   |
+| `--create-project-name`   | `true`       | Give each project a name (see `--project-name-strategy`)      |
 | `--project-name-strategy` | `auto-strip` | Naming strategy: `auto-strip`, `stack-name`, `last-n`, `full` |
 | `--project-name-prefix`   |              | Strip this prefix from stack paths (`auto-strip`, `stack-name`) |
 | `--project-name-depth`    | `3`          | Number of trailing path segments for `last-n` (at least 1)    |
-| `--create-workspace`      | `false`      | Set workspace from stack path (made a valid Atlantis workspace) |
-| `--sort-by`               | `dir`        | Sort projects by `dir`, `name` or `execution_order_group`     |
+| `--create-workspace`      | `false`      | Set workspace from stack path (made a valid Atlantis workspace; the root stack keeps the default) |
+| `--sort-by`               | `dir`        | Sort projects by `dir`, `name` or `execution_order_group` (needs `--execution-order-groups`, else it sorts by dir) |
 
 **Dependencies**
 
 | Flag                       | Default | Description                                              |
 | -------------------------- | ------- | -------------------------------------------------------- |
-| `--execution-order-groups` | `false` | Add execution order groups from stack dependencies       |
-| `--depends-on`             | `false` | Add `depends_on` (project names) from stack dependencies |
+| `--execution-order-groups` | `false` | Set `execution_order_group` from stack ordering          |
+| `--depends-on`             | `false` | Set `depends_on` (project names) from stack ordering     |
 
 See [Dependencies](#dependencies) for how `after`/`before` are resolved.
 
@@ -220,18 +222,18 @@ See [Dependencies](#dependencies) for how `after`/`before` are resolved.
 
 | Flag                        | Default                                | Description                                                         |
 | --------------------------- | -------------------------------------- | ------------------------------------------------------------------- |
-| `--autoplan`                | `true`                                 | Enable autoplan for all projects                                    |
+| `--autoplan`                | `true`                                 | Default autoplan setting                                            |
 | `--parallel`                | `true`                                 | Enable parallel plan and apply                                      |
-| `--automerge`               | `false`                                | Enable automerge in atlantis.yaml                                   |
+| `--automerge`               | `false`                                | Enable automerge                                                    |
 | `--workflow`                |                                        | Default workflow name for all projects                              |
 | `--terraform-version`       |                                        | Default Terraform version for all projects                          |
 | `--when-modified`           | `*.tf, *.tf.json, .terraform.lock.hcl` | File patterns that trigger autoplan                                 |
-| `--apply-requirements`      |                                        | Apply requirements for all projects                                 |
-| `--tag-workflow`            |                                        | Map stack tags to workflows: `tag=workflow`, comma-separated        |
+| `--apply-requirements`      |                                        | Default apply requirements                                          |
+| `--tag-workflow`            |                                        | Map stack tags to workflows: `tag=workflow`, comma-separated or repeated |
 | `--tag-requirements`        |                                        | Map a stack tag to apply requirements: `tag=req1,req2`, repeatable  |
-| `--preserve-workflows`      | `false`                                | Keep existing workflow blocks from current atlantis.yaml            |
+| `--preserve-workflows`      | `false`                                | Keep workflows from the existing output file (not when writing to stdout) |
 | `--generate-workflows`      | `false`                                | Generate a `terramate` workflow and use it as the default workflow  |
-| `--workflow-terramate-wrap` | `true`                                 | Wrap terraform commands with `terramate run` in generated workflows |
+| `--workflow-terramate-wrap` | `true`                                 | Run terraform in the generated workflow through `terramate run`     |
 | `--workflow-disable-safeguards` | `git`                              | Terramate safeguards the generated workflow disables; empty keeps all |
 
 See [Workflows](#workflows) for how workflows are generated, assigned and merged.
@@ -240,17 +242,18 @@ See [Workflows](#workflows) for how workflows are generated, assigned and merged
 
 | Flag                 | Default | Description                                                          |
 | -------------------- | ------- | -------------------------------------------------------------------- |
-| `--changed`          | `false` | Only include stacks changed vs base ref                              |
-| `--changed-base-ref` | `main`  | Git ref to compare against for change detection                      |
+| `--changed`          | `false` | Include only stacks changed against `--changed-base-ref`, including uncommitted changes |
+| `--changed-base-ref` | `main`  | Git ref that `--changed` compares against                            |
 | `--check`            | `false` | Exit 1 if the output file is missing or would change                 |
-| `--diff`             | `false` | Print a unified diff of current vs generated output; exit 1 if any   |
+| `--diff`             | `false` | Print a unified diff of the output file against the generated content; exit 1 if they differ |
 
 `--check` and `--diff` compare against the output file, so they need `--output` (or `output` in the config file). They never write the file. Exit code `0` means up to date, `1` means stale or failed.
 
 **Other commands**
 
-- `terramate-atlantis-config validate atlantis.yaml` checks an existing file: `version: 3`, a `dir` for every project, valid and unique project names (and no `name: ""`), every project that shares a dir and workspace with another one has a name, no named project whose dir is a glob pattern (`*`, `?` or `[`), project dirs without `..` (Atlantis rejects it anywhere in a dir, even in `a..b`), and `depends_on` entries that name existing projects other than the project itself. A project whose workflow isn't defined in the file only gets a warning, since Atlantis also looks it up in the server-side repo config. Exits `1` on any error.
-- `terramate-atlantis-config version` prints the version, commit and build date.
+- `terramate-atlantis-config validate atlantis.yaml` checks an existing file: `version: 3`, a `dir` for every project, valid and unique project names (and no `name: ""`), every project that shares a dir and workspace with another one has a name, no named project whose dir is a glob pattern (`*`, `?` or `[`), project dirs without `..` (Atlantis rejects it anywhere in a dir, even in `a..b`), and `depends_on` entries that name existing projects other than the project itself. When the file defines workflows, a project whose workflow isn't among them only gets a warning, since Atlantis also looks it up in the server-side repo config. It reads JSON output too. Exits `1` on any error.
+- `terramate-atlantis-config version` prints the version, commit and build date. Builds that aren't from goreleaser or `make` show the commit time as the date, and `go install module@version` builds show `unknown` for both.
+- `terramate-atlantis-config completion` prints a shell completion script.
 
 ### Per-stack globals
 
@@ -258,7 +261,7 @@ Set Terramate globals in any stack to override defaults for that project.
 
 | Global                        | Type         | Description                                           |
 | ----------------------------- | ------------ | ----------------------------------------------------- |
-| `atlantis_skip`               | bool         | Skip this stack entirely                              |
+| `atlantis_skip`               | bool         | Generate no project for this stack                    |
 | `atlantis_workflow`           | string       | Override workflow for this stack                      |
 | `atlantis_autoplan`           | bool         | Override autoplan enabled/disabled                    |
 | `atlantis_terraform_version`  | string       | Override Terraform version                            |
@@ -266,9 +269,9 @@ Set Terramate globals in any stack to override defaults for that project.
 | `atlantis_extra_deps`         | list(string) | Additional when_modified entries merged with defaults (ignored when `atlantis_when_modified` is set) |
 | `atlantis_apply_requirements` | list(string) | Override apply requirements                           |
 
-`atlantis_when_modified = []` and `atlantis_apply_requirements = []` are explicit overrides, not "unset". `apply_requirements: []` is written to the project, which tells Atlantis to require nothing before apply, overriding the server-side requirements as well. Leave the global unset to fall back to tag requirements, `--apply-requirements`, and then the server-side defaults.
+`atlantis_when_modified = []` and `atlantis_apply_requirements = []` are explicit overrides, not "unset". `apply_requirements: []` is written to the project, which tells Atlantis to require nothing before apply, overriding the server-side requirements as well. Leave the global unset to fall back to tag requirements, `--apply-requirements`, and then the server-side defaults. An empty `--apply-requirements` or `apply_requirements: []` only clears the default: the project gets no `apply_requirements` key, so Atlantis uses the server-side requirements.
 
-Any other global starting with `atlantis_` (usually a typo such as `atlantis_workflows`) is ignored with a warning on stderr.
+A global set to `null` counts as unset; a global of the wrong type fails the run. Any other global starting with `atlantis_` (usually a typo such as `atlantis_workflows`) is ignored with a warning on stderr.
 
 > [!IMPORTANT]
 > Atlantis rejects the whole `atlantis.yaml` when it sets a key the server doesn't allow repositories to override. Projects with a workflow (`atlantis_workflow`, `--workflow`, `--tag-workflow`, `--generate-workflows`) need `allowed_overrides: [workflow]` in the server-side repo config, projects with apply requirements need `apply_requirements` there too, and workflows defined in the file (`--generate-workflows`, `workflows`, `--preserve-workflows`) need `allow_custom_workflows: true`.
@@ -291,14 +294,14 @@ Project names are derived from stack paths. Four strategies control the format:
 
 | Strategy     | Behavior                                                         | Example (`stacks/aws/prod/eu-west-1/db/billing`) |
 | ------------ | ---------------------------------------------------------------- | ------------------------------------------------ |
-| `auto-strip` | Strips the longest common prefix across all stacks               | `prod-eu-west-1-db-billing`                      |
-| `stack-name` | Uses the stack's `name` field, prefixed with up to 3 parent dirs | `prod-eu-west-1-db-billing`                      |
+| `auto-strip` | Strips the longest path prefix (whole segments) all stacks share | `prod-eu-west-1-db-billing`                      |
+| `stack-name` | Uses the stack's `name` (or its dir name), prefixed with up to 3 parent dirs | `prod-eu-west-1-db-billing`          |
 | `last-n`     | Uses the last N path segments                                    | `db-billing` (depth=2)                           |
 | `full`       | Full path, no stripping                                          | `stacks-aws-prod-eu-west-1-db-billing`           |
 
 - **Names are stable.** They are always computed against every stack in the repository (except those with `atlantis_skip`), so `--changed`, `--filter`, `--filter-path` and `--exclude-*` never rename a project.
 - **Names are unique.** If two stacks would produce the same name, the tool adds parent segments to the name the strategy produced until they differ, and falls back to the full path (then a numeric suffix) as a last resort.
-- **Names are valid.** Characters Atlantis rejects in project names (anything that isn't URL safe, such as spaces) are replaced with `-`.
+- **Names are valid.** `/` and characters Atlantis rejects in project names (anything that isn't URL safe, such as spaces) are replaced with `-`, and leading `-` are dropped.
 - `--project-name-prefix` replaces the detected common prefix of `auto-strip` and is stripped before `stack-name` picks its parent dirs; `last-n` and `full` ignore it. It only strips whole path segments: `stacks/aws/prod` strips `stacks/aws/prod/vpc` but not `stacks/aws/production/vpc`.
 - A stack at the repository root gets `dir: .` and the name `root` (with `stack-name`, its `name` field, if set).
 
@@ -307,10 +310,12 @@ Project names are derived from stack paths. Four strategies control the format:
 With `--depends-on` and/or `--execution-order-groups`, stack ordering is read from each stack's `after` and `before` attributes, with the same semantics as `terramate run`:
 
 - relative (`../vpc`) and absolute (`/stacks/network/vpc`) paths;
-- a directory expands to every stack at or below it, so a stack's nested stacks are included;
+- a directory expands to every stack at or below it, so a stack's nested stacks are included (paths that don't exist are ignored);
 - tag queries such as `tag:network` expand to every stack matching the [tag filter](https://terramate.io/docs/cli/reference/cmdline/run#--tags), and the stacks nested below them.
 
-`depends_on` lists **project names**, which is what Atlantis matches it against, so `--depends-on` requires `--create-project-name` (the default). Stacks that aren't part of the generated config (filtered out, not changed, or skipped) aren't listed in `depends_on`, but ordering is followed through them as `terramate run` does: if `a` runs after `m` and `m` after `z`, `a` still depends on `z` when `m` isn't generated. A dependency cycle is reported as a warning.
+`depends_on` lists **project names**, which is what Atlantis matches it against, so `--depends-on` requires `--create-project-name` (the default). Stacks that aren't part of the generated config (filtered out, not changed, or skipped) aren't listed in `depends_on`, but ordering is followed through them as `terramate run` does: if `a` runs after `m` and `m` after `z`, `a` still depends on `z` when `m` isn't generated. A dependency cycle is reported as a warning, and the stacks on it share one execution order group. A project's `execution_order_group` is the length of its longest chain of generated dependencies (`0`, which leaves the key out, when it has none).
+
+An excerpt from [`testdata/dependencies`](testdata/dependencies), where `stacks/app/web` also declares `before = ["../api"]`:
 
 ```hcl
 # stacks/app/api/stack.tm.hcl
@@ -325,6 +330,7 @@ stack {
   dir: stacks/app/api
   execution_order_group: 3
   depends_on:
+    - app-web
     - data-rds
     - network-dns
 ```
@@ -343,17 +349,17 @@ The generated workflow runs Terraform through `terramate run`:
 ```yaml
 workflows:
   terramate:
+    apply:
+      steps:
+        - run: terramate run --no-recursive --disable-safeguards=git -- terraform apply "$PLANFILE"
     plan:
       steps:
         - run: terramate run --no-recursive --disable-safeguards=git -- terraform init -input=false
         - run: terramate run --no-recursive --disable-safeguards=git -- terraform plan -input=false -out="$PLANFILE"
-    apply:
-      steps:
-        - run: terramate run --no-recursive --disable-safeguards=git -- terraform apply "$PLANFILE"
 ```
 
 - **`--no-recursive`**: every stack is its own Atlantis project, so a parent stack must not also run its nested child stacks.
-- **`--disable-safeguards=git`**: Terramate's git safeguards don't hold inside an Atlantis checkout. Atlantis plans pull requests whose branch is usually behind the default branch, which makes the `git-out-of-sync` safeguard refuse to run (`current HEAD is out-of-date with the remote base branch`). The pre-workflow hook and Terraform also write files into the checkout (`atlantis.yaml`, plan and lock files), which the `git-untracked` and `git-uncommitted` safeguards are meant to catch. `outdated-code` stays enabled. Pick a different set with `--workflow-disable-safeguards git-out-of-sync,git-untracked`, or keep every safeguard with `--workflow-disable-safeguards=`.
+- **`--disable-safeguards=git`**: Atlantis plans pull requests whose branch is usually behind the default branch, which makes Terramate's `git-out-of-sync` safeguard refuse to run (`current HEAD is out-of-date with the remote base branch`). Terramate skips the `git-untracked` and `git-uncommitted` checks under `--no-recursive`, so disabling all of `git` changes nothing else. `outdated-code` stays enabled. Pick a different set with `--workflow-disable-safeguards git-out-of-sync,git-untracked`, or keep every safeguard with `--workflow-disable-safeguards=`.
 
 Atlantis passes a project's workspace to run steps as `$WORKSPACE`, not `TF_WORKSPACE`, so with `--create-workspace` the generated workflow still runs in Terraform's `default` workspace. The generated workflow runs the `terraform` found on the Atlantis server's `PATH`. Atlantis installs the versions that projects ask for as `terraform<version>` and only uses them for its built-in steps, so a project's `terraform_version` (`--terraform-version`, `atlantis_terraform_version`) doesn't change the binary a generated workflow runs.
 
@@ -369,7 +375,7 @@ TM_DISABLE_SAFEGUARDS=git
 2. the generated `terramate` workflow (`--generate-workflows`), so a stale copy in the existing file is refreshed;
 3. workflows defined under `workflows:` in the config file, so you can replace the generated workflow by defining one with the same name.
 
-When a config file workflow overrides a different definition of the same name, a warning names it on stderr. Refreshing an identical copy that the previous run wrote to the output file is silent.
+When a config file workflow replaces a generated one, or a different copy kept from the output file, a warning names it on stderr. Replacing an identical copy that the previous run wrote, or refreshing the generated workflow, is silent.
 
 ## 💡 Recipes
 
@@ -379,17 +385,19 @@ When a config file workflow overrides a different definition of the same name, a
 terramate-atlantis-config generate --changed --changed-base-ref main --output atlantis.yaml
 ```
 
-**Short project names, changed stacks only (recommended for PR workflows):**
+**Short project names, changed stacks only in PR runs:**
 
 ```yaml
 # .terramate-atlantis.yaml
 project_name_strategy: last-n
 project_name_depth: 2
-changed: true
-changed_base_ref: origin/main
 ```
 
-Names don't depend on which stacks are included, so a project keeps its name whether or not it changed in a given PR. `--changed` needs the base ref in the checkout: a shallow or single-branch clone (the default of `actions/checkout`, and of Atlantis' `branch` checkout strategy) doesn't have it, so fetch it first. Since `changed` in the config file applies to every run, including the pre-commit hook and `--check`, prefer passing `--changed` only where you want it.
+```sh
+terramate-atlantis-config generate --changed --changed-base-ref origin/main --output atlantis.yaml
+```
+
+Names don't depend on which stacks are included, so a project keeps its name whether or not it changed in a given PR. `--changed` needs the base ref in the checkout: a shallow or single-branch clone (the default of `actions/checkout`, and of Atlantis' `branch` checkout strategy) doesn't have it, so fetch it first. Pass `--changed` only where you want it: `changed: true` in the config file would also apply to the pre-commit hook and `--check`.
 
 **Check atlantis.yaml is up to date in CI:**
 
@@ -456,13 +464,13 @@ The action downloads the release binary for the runner (Linux, macOS or Windows;
 | `version` | `latest`        | `latest`, a release tag such as `v1.1.0`, or any other git ref (built with `go install`, needs Go) |
 | `root`    | `.`             | Root directory of the Terramate project                                                            |
 | `output`  | `atlantis.yaml` | Output file path                                                                                   |
-| `check`   | `false`         | Fail if the output file is out of date                                                             |
-| `args`    |                 | Extra whitespace-separated arguments for `generate`                                                |
+| `check`   | `false`         | Fail if the output file is missing or out of date                                                  |
+| `args`    |                 | Extra whitespace-separated arguments for `generate` (quotes are not interpreted)                   |
 | `token`   | `github.token`  | Token for downloading the release from github.com; `""` downloads anonymously                      |
 
 | Output     | Description                                                  |
 | ---------- | ------------------------------------------------------------ |
-| `projects` | Number of projects in the generated configuration (any mode) |
+| `projects` | Number of projects in the generated configuration (any mode; `0` if it can't be counted) |
 | `version`  | Installed version                                            |
 
 `@v1` follows the latest `v1.x.y` release; pin a full tag such as `@v1.1.0` for reproducible builds.
@@ -478,7 +486,7 @@ repos:
 ```
 
 > [!NOTE]
-> The pre-commit hook writes `atlantis.yaml` at the repository root (override with `args: [--output, path/to/atlantis.yaml]`). Stage the updated file as part of your commit or let your CI catch any drift with `--check`.
+> The pre-commit hook writes `atlantis.yaml` at the repository root, even when the config file sets `output` (override with `args: [--output, path/to/atlantis.yaml]`). Stage the updated file as part of your commit or let your CI catch any drift with `--check`.
 
 ## 🤝 Contributing
 
@@ -502,7 +510,7 @@ Contributions are welcome! To suggest an enhancement, report a bug, or submit a 
    make test     # run tests
    make lint     # run linters
    make build    # build binary
-   make check    # full CI check (vet + fmt + lint + test)
+   make check    # vet + fmt + lint + test (CI also runs -race and the Terramate CLI tests)
    make e2e      # end-to-end tests against real Atlantis + Gitea (needs Docker, see e2e/README.md)
    make help     # list all targets
    ```

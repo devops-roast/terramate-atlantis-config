@@ -7,19 +7,15 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// WorkflowSource labels where a workflow definition came from.
+// WorkflowSource is where a workflow came from; override warnings print it.
 type WorkflowSource string
 
 const (
-	// SourcePreserved is a workflow kept from the existing output file.
-	SourcePreserved WorkflowSource = "existing output file"
-	// SourceGenerated is a workflow produced by --generate-workflows.
+	SourcePreserved WorkflowSource = "the existing output file"
 	SourceGenerated WorkflowSource = "--generate-workflows"
-	// SourceConfig is a workflow defined in the config file.
-	SourceConfig WorkflowSource = "config file"
+	SourceConfig    WorkflowSource = "the config file"
 )
 
-// WorkflowLayer is one source of workflow definitions.
 type WorkflowLayer struct {
 	Source    WorkflowSource
 	Workflows map[string]interface{}

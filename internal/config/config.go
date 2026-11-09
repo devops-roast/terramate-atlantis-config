@@ -1,3 +1,4 @@
+// Package config loads the .terramate-atlantis.yaml config file.
 package config
 
 import (
@@ -44,8 +45,9 @@ type FileConfig struct {
 	GenerateWorkflows         *bool                 `yaml:"generate_workflows"`
 	WorkflowTerramateWrap     *bool                 `yaml:"workflow_terramate_wrap"`
 	WorkflowDisableSafeguards *StringList           `yaml:"workflow_disable_safeguards"`
-	// Workflows is kept as a YAML node so its values can be written back
-	// exactly as they are in the file.
+	// Workflows is kept as a YAML node so scalars keep the text and type
+	// they have in the file (see atlantis.WorkflowsValue). Key order,
+	// comments and anchors are not kept.
 	Workflows           yaml.Node `yaml:"workflows"`
 	SortBy              string    `yaml:"sort_by"`
 	ProjectNameStrategy string    `yaml:"project_name_strategy"`
@@ -57,7 +59,6 @@ type FileConfig struct {
 // string, so both `[approved, mergeable]` and `approved,mergeable` work.
 type StringList []string
 
-// UnmarshalYAML implements yaml.Unmarshaler.
 func (l *StringList) UnmarshalYAML(node *yaml.Node) error {
 	switch node.Kind {
 	case yaml.SequenceNode:
@@ -68,6 +69,9 @@ func (l *StringList) UnmarshalYAML(node *yaml.Node) error {
 		*l = cleanList(items)
 		return nil
 	case yaml.ScalarNode:
+		// Null is an empty list, so `prod: ~` in tag_requirements is
+		// rejected like `prod: []`. On a *StringList field yaml.v3 leaves
+		// the pointer nil without calling this, so there null means unset.
 		if node.Tag == "!!null" {
 			*l = StringList{}
 			return nil
@@ -119,8 +123,8 @@ func LoadConfig(rootDir string) (*FileConfig, error) {
 	return nil, nil
 }
 
-// LoadConfigFromPath loads a config file. Unknown keys are rejected so typos
-// do not silently fall back to defaults.
+// LoadConfigFromPath loads a config file. Unknown keys are an error, so a
+// typo doesn't silently fall back to the default.
 func LoadConfigFromPath(configPath string) (*FileConfig, error) {
 	content, err := os.ReadFile(configPath)
 	if err != nil {
@@ -180,15 +184,10 @@ func isEmptyDocument(doc *yaml.Node) bool {
 // checkKnownKeys reports unknown top-level keys with a readable message.
 // Nested values (workflows, tag maps) are free-form or typed by the decoder.
 func checkKnownKeys(root *yaml.Node) error {
-	if root.Kind != yaml.DocumentNode || len(root.Content) == 0 {
+	if isEmptyDocument(root) {
 		return nil
 	}
 	mapping := root.Content[0]
-	// A document with no content ("---" with every key commented out) is
-	// an empty config, like an empty file.
-	if mapping.Kind == yaml.ScalarNode && mapping.Tag == "!!null" {
-		return nil
-	}
 	if mapping.Kind != yaml.MappingNode {
 		return fmt.Errorf("line %d: expected a mapping of config keys", mapping.Line)
 	}

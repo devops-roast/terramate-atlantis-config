@@ -12,17 +12,20 @@ make -C e2e test SCENARIOS=01-plan-apply
 make -C e2e clean                      # tear down, including volumes
 ```
 
-Requirements: Docker with Compose v2, Go, `curl` and `jq`.
+Requirements: Docker with Compose v2, Go, `git`, `curl` and `jq`.
 
 ## Layout
 
 | Path                   | Purpose                                                                 |
 | ---------------------- | ----------------------------------------------------------------------- |
 | `Dockerfile.atlantis`  | Pinned Atlantis image with pinned `terraform`, `terramate` and our binary |
+| `docker-compose.yaml`  | Gitea and Atlantis services                                             |
 | `repos.yaml`           | Server-side Atlantis config: the pre-workflow hook and server workflows |
 | `fixtures/`            | Terramate project pushed to `main` of the test repository during setup  |
 | `scenarios/*.sh`       | One scenario per file, run in file name order                           |
+| `scripts/setup.sh`     | Creates the Gitea users, tokens, test repository and webhook            |
 | `scripts/lib.sh`       | Helpers available to scenarios                                          |
+| `scripts/wait-for-url.sh` | Waits until Gitea or Atlantis answers                              |
 | `scripts/run-test.sh`  | Runs scenarios, prints a summary and dumps logs on failure              |
 
 ## Adding a scenario

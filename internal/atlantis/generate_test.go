@@ -671,7 +671,7 @@ func TestProjectNameStrategyAutoStrip(t *testing.T) {
 	})
 
 	names := projectNames(cfg)
-	// common prefix is "stacks/aws" so it gets stripped
+	// The common prefix "stacks/aws" is stripped.
 	wantNames := []string{"prod-rds", "prod-vpc", "staging-vpc"}
 	if !reflect.DeepEqual(names, wantNames) {
 		t.Fatalf("auto-strip names: got %v, want %v", names, wantNames)

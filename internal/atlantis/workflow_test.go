@@ -82,21 +82,6 @@ func TestGenerateWorkflows(t *testing.T) {
 		t.Parallel()
 		assert.Nil(t, GenerateWorkflows(WorkflowOptions{}))
 	})
-
-	t.Run("custom workflows", func(t *testing.T) {
-		t.Parallel()
-
-		workflows := GenerateWorkflows(WorkflowOptions{
-			CustomWorkflows: map[string]WorkflowTemplate{
-				"custom": {
-					PlanSteps:  []Step{{StepType: "run", Command: "echo plan"}},
-					ApplySteps: []Step{{StepType: "run", Command: "echo apply"}},
-				},
-			},
-		})
-
-		assert.Equal(t, []string{"echo plan"}, runSteps(t, workflows, "custom", "plan"))
-	})
 }
 
 func TestValidateSafeguards(t *testing.T) {

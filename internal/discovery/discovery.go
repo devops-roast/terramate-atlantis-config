@@ -1,3 +1,5 @@
+// Package discovery loads Terramate stacks, applies the stack filters and
+// reads each stack's atlantis_* globals and after/before ordering.
 package discovery
 
 import (
@@ -34,9 +36,8 @@ type DiscoverOptions struct {
 	Warnf func(format string, args ...any)
 }
 
-// StackInfo contains discovered stack metadata and atlantis overrides.
 type StackInfo struct {
-	// Core metadata from Terramate SDK
+	// Name is the stack's name attribute, "" when unset (see declaredName).
 	Name        string
 	ID          string
 	Description string
@@ -53,7 +54,7 @@ type StackInfo struct {
 	AfterDirs  []string
 	BeforeDirs []string
 
-	// Atlantis overrides extracted from globals
+	// From the stack's atlantis_* globals.
 	Skip              bool
 	Workflow          string
 	AutoplanEnabled   *bool // nil = use CLI default
@@ -75,7 +76,8 @@ type Result struct {
 	AllStacks []StackInfo
 }
 
-// Discover loads stacks from a Terramate root and extracts Atlantis overrides.
+// Discover returns the stacks the filters select, with their overrides, and
+// every stack in the repository. Both lists are sorted by Dir.
 func Discover(opts DiscoverOptions) (Result, error) {
 	rootDir := opts.RootDir
 	if rootDir == "" {
@@ -122,15 +124,15 @@ func Discover(opts DiscoverOptions) (Result, error) {
 		orderByDir[normalizeStackPath(stack.Dir.String())] = order
 
 		// Errors only fail the run for selected stacks (below); here a stack
-		// whose globals or order entries can't be read is simply not
-		// skipped and has no ordering.
+		// whose globals or order entries can't be read counts as not skipped
+		// and unordered.
 		afterDirs, beforeDirs := order.afterDirs, order.beforeDirs
 		if order.err != nil {
 			afterDirs, beforeDirs = nil, nil
 		}
 
 		allStacks = append(allStacks, StackInfo{
-			Name:        stack.Name,
+			Name:        declaredName(root, stack),
 			ID:          stack.ID,
 			Description: stack.Description,
 			Dir:         normalizeStackPath(stack.Dir.String()),
@@ -153,7 +155,7 @@ func Discover(opts DiscoverOptions) (Result, error) {
 
 		allowedPaths = make(map[string]struct{}, len(filteredPaths))
 		for _, p := range filteredPaths {
-			allowedPaths[p.String()] = struct{}{}
+			allowedPaths[normalizeStackPath(p.String())] = struct{}{}
 		}
 	}
 
@@ -176,7 +178,7 @@ func Discover(opts DiscoverOptions) (Result, error) {
 
 		changedPaths := make(map[string]struct{}, len(report.Stacks))
 		for _, entry := range report.Stacks {
-			changedPaths[entry.Stack.Dir.String()] = struct{}{}
+			changedPaths[normalizeStackPath(entry.Stack.Dir.String())] = struct{}{}
 		}
 
 		allowedPaths = intersectAllowedPaths(allowedPaths, changedPaths)
@@ -198,13 +200,13 @@ func Discover(opts DiscoverOptions) (Result, error) {
 	discovered := make([]StackInfo, 0, len(stacks))
 	for _, sortable := range stacks {
 		stack := sortable.Stack
+		stackDir := normalizeStackPath(stack.Dir.String())
 		if allowedPaths != nil {
-			if _, ok := allowedPaths[stack.Dir.String()]; !ok {
+			if _, ok := allowedPaths[stackDir]; !ok {
 				continue
 			}
 		}
 
-		stackDir := normalizeStackPath(stack.Dir.String())
 		if opts.PathFilter != "" {
 			matched, err := matchesPathOrParent(opts.PathFilter, stackDir)
 			if err != nil {
@@ -215,8 +217,8 @@ func Discover(opts DiscoverOptions) (Result, error) {
 			}
 		}
 
-		// Exclusions apply before anything about the stack is evaluated, so
-		// an excluded stack can't fail the run (e.g. with invalid globals).
+		// Exclusions are checked before the stored globals and order errors,
+		// so an excluded stack can't fail the run.
 		if _, excluded := excludedPaths[stackDir]; excluded {
 			continue
 		}
@@ -243,7 +245,7 @@ func Discover(opts DiscoverOptions) (Result, error) {
 		afterDirs, beforeDirs := order.afterDirs, order.beforeDirs
 
 		discovered = append(discovered, StackInfo{
-			Name:              stack.Name,
+			Name:              declaredName(root, stack),
 			ID:                stack.ID,
 			Description:       stack.Description,
 			Dir:               stackDir,
@@ -322,6 +324,17 @@ func atlantisOverrides(root *config.Root, stack *config.Stack) (globalsExtract.A
 	return overrides, nil
 }
 
+// declaredName returns the stack's name attribute, or "" when it is unset.
+// Terramate fills an unset name with the base name of the stack's absolute
+// directory, which for the root stack is the checkout directory: a name that
+// differs between a local clone and Atlantis' working copy.
+func declaredName(root *config.Root, stack *config.Stack) string {
+	if tree, ok := root.Lookup(stack.Dir); ok && tree.Node.Stack != nil {
+		return tree.Node.Stack.Name
+	}
+	return stack.Name
+}
+
 // stackOrder is a stack's resolved stack.after and stack.before entries.
 type stackOrder struct {
 	afterDirs  []string
@@ -342,11 +355,11 @@ func resolveOrder(root *config.Root, stack *config.Stack) stackOrder {
 }
 
 // resolveOrderEntries resolves stack.after / stack.before entries to stack
-// directories the same way `terramate run` orders stacks: path entries
-// (relative to the stack, or absolute from the project root) select every
-// stack at or below that directory, and "tag:<filter>" entries select every
-// stack at or below the stacks matching the tag filter. The stack itself is never included.
-// Paths that don't exist are ignored, as Terramate does.
+// dirs the way `terramate run` orders stacks: a path (relative to the stack,
+// or absolute from the project root) selects every stack at or below it, and
+// "tag:<filter>" every stack at or below the stacks matching the filter. The
+// stack itself is never included. Paths that don't exist are ignored, as
+// Terramate does.
 func resolveOrderEntries(root *config.Root, stack *config.Stack, entries []string) ([]string, error) {
 	if len(entries) == 0 {
 		return nil, nil
@@ -409,6 +422,7 @@ func cloneKeepingNil(s []string) []string {
 	return append([]string{}, s...)
 }
 
+// intersectAllowedPaths treats a nil current as "no filter yet".
 func intersectAllowedPaths(current, incoming map[string]struct{}) map[string]struct{} {
 	if current == nil {
 		return incoming
@@ -429,6 +443,9 @@ func intersectAllowedPaths(current, incoming map[string]struct{}) map[string]str
 // directory it matches: "infra" selects infra and infra/vpc, "*/vpc" selects
 // a/vpc and a/vpc/subnet. This mirrors how a directory scopes stacks in
 // Terramate (`terramate run` in a directory includes its nested stacks).
+//
+// The walk stops before the root, so "." selects the root stack only, not
+// every stack below it.
 func matchesPathOrParent(pattern, stackDir string) (bool, error) {
 	dir := filepath.ToSlash(strings.TrimPrefix(stackDir, "/"))
 	for {
@@ -444,7 +461,6 @@ func matchesPathOrParent(pattern, stackDir string) (bool, error) {
 	}
 }
 
-// matchesPathFilter reports whether pattern matches stackDir itself.
 func matchesPathFilter(pattern, stackDir string) (bool, error) {
 	normalizedPattern := normalizePathPattern(pattern)
 	if normalizedPattern == "" {
@@ -478,8 +494,9 @@ func matchesPathFilter(pattern, stackDir string) (bool, error) {
 
 // normalizePathPattern makes a path filter relative to the project root and
 // drops redundant separators and "." segments, so "infra", "/infra",
-// "./infra" and "infra/" are the same filter. It returns "" (no filter) for
-// an empty pattern or "/". "." stays "." and matches the root stack.
+// "./infra" and "infra/" are the same filter. It returns "" for an empty
+// pattern or "/", which matches every stack. "." stays "." and matches the
+// root stack.
 func normalizePathPattern(pattern string) string {
 	p := filepath.ToSlash(pattern)
 	if p == "" {
@@ -630,7 +647,6 @@ func classChar(chunk string) (r rune, rest string, err error) {
 	return r, rest, nil
 }
 
-// stackOverrides is the result of reading one stack's atlantis_* globals.
 type stackOverrides struct {
 	overrides globalsExtract.AtlantisOverrides
 	err       error

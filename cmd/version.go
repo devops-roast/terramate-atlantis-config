@@ -7,11 +7,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Version, Commit and BuildDate are set with -ldflags -X by release builds
-// (.goreleaser.yaml, Makefile). Other builds fall back to the build
-// information the Go toolchain embeds: the module version for
-// `go install module@version`, and the VCS revision and time for builds from
-// a git checkout.
+// Version, Commit and BuildDate are set with -ldflags -X by goreleaser and
+// `make build`. Other builds fall back to the build information Go embeds:
+// the module version (the release for `go install module@version`, a
+// pseudo-version in a git checkout), and in a git checkout the commit and its
+// time. A `go install module@version` build has no commit or date.
 var (
 	Version   = "dev"
 	Commit    = "unknown"

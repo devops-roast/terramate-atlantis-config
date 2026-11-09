@@ -122,8 +122,8 @@ func TestEnsureUniqueNames(t *testing.T) {
 func TestProjectNamesAreUniqueAcrossStrategies(t *testing.T) {
 	t.Parallel()
 
-	// "a/b" and "a-b" sanitize to the same name, and disambiguating the
-	// two "vpc" stacks produces "prod-vpc", which clashes with "prod-vpc".
+	// "a/b" and "a-b" sanitize to the same name, and disambiguating the two
+	// "vpc" stacks produces "prod-vpc", the name of the stack in "prod-vpc".
 	stacks := []discovery.StackInfo{
 		{Dir: "a/b"},
 		{Dir: "a-b"},
@@ -254,7 +254,7 @@ func TestRootStackNaming(t *testing.T) {
 		t.Fatalf("names: got %v", got)
 	}
 
-	// An empty Dir (as older discovery code produced) is treated as root.
+	// An empty Dir is treated as the root.
 	cfg = mustGenerate(t, []discovery.StackInfo{{Dir: ""}}, Options{CreateProjectName: true})
 	if cfg.Projects[0].Dir != "." || cfg.Projects[0].Name != "root" {
 		t.Fatalf("empty dir: got %+v", cfg.Projects[0])
