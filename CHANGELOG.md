@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.3.0](https://github.com/devops-roast/terramate-atlantis-config/compare/v1.2.2...v1.3.0) (2026-11-09)
+
+
+### Features
+
+* derive when_modified from the Terramate config ([#20](https://github.com/devops-roast/terramate-atlantis-config/issues/20)) ([bd8a733](https://github.com/devops-roast/terramate-atlantis-config/commit/bd8a733f439e5846a1b24c8a95a4c690183b77c5))
+
+
+### Bug Fixes
+
+* discard terraform init stdout in generated workflows ([#19](https://github.com/devops-roast/terramate-atlantis-config/issues/19)) ([1530375](https://github.com/devops-roast/terramate-atlantis-config/commit/15303752c76fec8324c300df0b821da931bf3c2e))
+
 ## [1.2.2](https://github.com/devops-roast/terramate-atlantis-config/compare/v1.2.1...v1.2.2) (2026-11-09)
 
 
