@@ -4,14 +4,17 @@ import (
 	"bytes"
 	"errors"
 	"flag"
+	"fmt"
 	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
 
+	"github.com/moby/patternmatcher"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 
@@ -26,10 +29,18 @@ func TestIntegration(t *testing.T) {
 	dependencyOpts.DependsOn = true
 	dependencyOpts.ExecutionOrderGroups = true
 
+	fromConfigOpts := defaultOpts()
+	fromConfigOpts.WhenModifiedFromConfig = true
+
+	rootFromConfigOpts := dependencyOpts
+	rootFromConfigOpts.WhenModifiedFromConfig = true
+
 	tests := []struct {
 		name    string
 		fixture string
 		opts    atlantis.Options
+		// expected is the golden file in fixture, expected.yaml by default.
+		expected string
 	}{
 		{name: "simple", fixture: "testdata/simple", opts: defaultOpts()},
 		{name: "multi", fixture: "testdata/multi", opts: defaultOpts()},
@@ -37,6 +48,11 @@ func TestIntegration(t *testing.T) {
 		{name: "skip_stack", fixture: "testdata/skip_stack", opts: defaultOpts()},
 		{name: "dependencies", fixture: "testdata/dependencies", opts: dependencyOpts},
 		{name: "root_stack", fixture: "testdata/root_stack", opts: dependencyOpts},
+		{name: "when_modified_from_config", fixture: "testdata/when_modified_from_config", opts: fromConfigOpts},
+		{
+			name: "root_stack_when_modified_from_config", fixture: "testdata/root_stack", opts: rootFromConfigOpts,
+			expected: "expected_when_modified_from_config.yaml",
+		},
 	}
 
 	for _, tt := range tests {
@@ -44,7 +60,10 @@ func TestIntegration(t *testing.T) {
 			tmpDir := copyFixture(t, tt.fixture)
 			initGitRepo(t, tmpDir)
 
-			result, err := discovery.Discover(discovery.DiscoverOptions{RootDir: tmpDir})
+			result, err := discovery.Discover(discovery.DiscoverOptions{
+				RootDir:                tmpDir,
+				WhenModifiedFromConfig: tt.opts.WhenModifiedFromConfig,
+			})
 			require.NoError(t, err)
 
 			opts := tt.opts
@@ -54,7 +73,11 @@ func TestIntegration(t *testing.T) {
 			got, err := atlantis.MarshalYAML(cfg, false)
 			require.NoError(t, err)
 
-			expectedPath, err := filepath.Abs(filepath.Join(tt.fixture, "expected.yaml"))
+			expectedFile := tt.expected
+			if expectedFile == "" {
+				expectedFile = "expected.yaml"
+			}
+			expectedPath, err := filepath.Abs(filepath.Join(tt.fixture, expectedFile))
 			require.NoError(t, err)
 			if *update {
 				require.NoError(t, os.WriteFile(expectedPath, got, 0o644))
@@ -427,7 +450,9 @@ func copyFixture(t *testing.T, fixture string) string {
 		if err != nil {
 			return err
 		}
-		if rel == "." || rel == "expected.yaml" {
+		// Golden files (expected.yaml, expected_*.yaml) are not part of the
+		// Terramate project.
+		if rel == "." || (strings.HasPrefix(rel, "expected") && filepath.Ext(rel) == ".yaml") {
 			return nil
 		}
 
@@ -521,4 +546,154 @@ func TestE2ELibAssertCommentCount(t *testing.T) {
 	require.NoError(t, assertCount("hello", "2"))
 	require.Error(t, assertCount("hello", "0"))
 	require.Error(t, assertCount("nothere", "1"))
+}
+
+// atlantisAutoplans returns the dirs of the projects Atlantis autoplans for a
+// pull request that modifies files (repo-relative, with forward slashes),
+// the way Atlantis matches when_modified (DetermineProjectsViaConfig in
+// server/events/project_finder.go): each pattern is joined to the project dir,
+// a leading '!' excludes, and a file matches when it or one of its parent
+// directories matches.
+func atlantisAutoplans(t *testing.T, cfg atlantis.Config, files ...string) []string {
+	t.Helper()
+
+	var planned []string
+	for _, project := range cfg.Projects {
+		if !project.Autoplan.Enabled {
+			continue
+		}
+		patterns := make([]string, 0, len(project.Autoplan.WhenModified))
+		for _, wm := range project.Autoplan.WhenModified {
+			wm = strings.TrimSpace(wm)
+			exclusion := strings.HasPrefix(wm, "!")
+			wm = filepath.Join(project.Dir, strings.TrimPrefix(wm, "!"))
+			if exclusion {
+				wm = "!" + wm
+			}
+			patterns = append(patterns, wm)
+		}
+		pm, err := patternmatcher.New(patterns)
+		require.NoError(t, err)
+		for _, file := range files {
+			match, err := pm.MatchesOrParentMatches(file)
+			require.NoError(t, err)
+			if match {
+				planned = append(planned, project.Dir)
+				break
+			}
+		}
+	}
+	return planned
+}
+
+// A pull request that changes only a parent directory's config, an imported
+// file, a module, or a watched file contains no change in the stack's own
+// directory. With --when-modified-from-config, Atlantis still autoplans the
+// stacks that depend on it, and only those.
+func TestCLIWhenModifiedFromConfigAutoplans(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Atlantis matches when_modified with Linux path semantics")
+	}
+	dir := copyFixture(t, "testdata/when_modified_from_config")
+	initGitRepo(t, dir)
+
+	const (
+		dns     = "stacks/aws/acme-development/eu-west-1/dns"
+		vpc     = "stacks/aws/acme-development/eu-west-1/vpc"
+		app     = "stacks/aws/acme-production/eu-west-1/app"
+		replica = "stacks/aws/acme-production/eu-west-1/app/replica"
+		legacy  = "stacks/aws/acme-production/eu-west-1/legacy"
+	)
+
+	without := generateAndValidate(t, dir)
+	require.Empty(t, atlantisAutoplans(t, without, "stacks/aws/acme-development/account.tm.hcl"),
+		"without the flag, a parent globals change plans nothing")
+
+	cfg := generateAndValidate(t, dir, "--when-modified-from-config")
+	for _, tc := range []struct {
+		name string
+		file string
+		want []string
+	}{
+		{"parent globals file", "stacks/aws/acme-development/account.tm.hcl", []string{dns, vpc}},
+		{"new file in a parent directory", "stacks/aws/acme-development/eu-west-1/region.tm", []string{dns, vpc}},
+		{"root config", "terramate.tm.hcl", []string{dns, vpc, app, replica}},
+		{"imported file", "imports/aws.tm.hcl", []string{dns, vpc}},
+		{"file imported by an imported file", "imports/common/tags.tm.hcl", []string{dns, vpc}},
+		{"file nobody imports", "imports/unused.tm.hcl", nil},
+		{"parent stack's config", app + "/stack.tm.hcl", []string{app, replica}},
+		{"watched file", "config/vpc.json", []string{vpc}},
+		{"module called by a module", "modules/subnets/main.tf", []string{vpc}},
+		{"any file in a nested module", "modules/vpc/nested/templates/policy.json", []string{vpc}},
+		{"atlantis_extra_deps entry", dns + "/records.yaml", []string{dns}},
+		{"stack's own terraform", legacy + "/main.tf", []string{legacy}},
+		{"unrelated file", "README.md", nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, atlantisAutoplans(t, cfg, tc.file))
+		})
+	}
+
+	// The config file key does the same, and the flag overrides it.
+	writeTestFile(t, dir, ".terramate-atlantis.yaml", "when_modified_from_config: true\n")
+	require.Equal(t, cfg, generateConfig(t, dir))
+	require.Equal(t, without, generateConfig(t, dir, "--when-modified-from-config=false"))
+}
+
+// The stacks `terramate list --changed` reports for a change are autoplanned
+// with --when-modified-from-config too. Terramate maps a changed file only up
+// to its enclosing stack (and follows modules and watch files), never down to
+// the stacks below a changed parent config file, which the flag also covers.
+// Needs the terramate binary, see cmd/terramate_cli_test.go.
+func TestCLIWhenModifiedFromConfigCoversTerramateChanged(t *testing.T) {
+	if _, err := exec.LookPath("terramate"); err != nil {
+		if os.Getenv("REQUIRE_TERRAMATE_CLI") != "" {
+			t.Fatal("terramate not found in PATH and REQUIRE_TERRAMATE_CLI is set")
+		}
+		t.Skip("terramate not found in PATH")
+	}
+	if runtime.GOOS == "windows" {
+		t.Skip("Atlantis matches when_modified with Linux path semantics")
+	}
+
+	dir := copyFixture(t, "testdata/when_modified_from_config")
+	initGitRepo(t, dir)
+	cfg := generateConfig(t, dir, "--when-modified-from-config")
+
+	for i, tc := range []struct {
+		file, content string
+	}{
+		{"stacks/aws/acme-development/account.tm.hcl", "\n# changed\n"},
+		{"stacks/aws/acme-development/eu-west-1/region.tm", "globals {\n  region_label = \"euw1\"\n}\n"},
+		{"imports/common/tags.tm.hcl", "\n# changed\n"},
+		{"stacks/aws/acme-production/eu-west-1/app/stack.tm.hcl", "\n# changed\n"},
+		{"stacks/aws/acme-production/eu-west-1/app/main.tf", "\n# changed\n"},
+		{"config/vpc.json", "\n"},
+		{"modules/subnets/main.tf", "\n# changed\n"},
+		{"modules/vpc/nested/main.tf", "\n# changed\n"},
+	} {
+		t.Run(tc.file, func(t *testing.T) {
+			runGit(t, dir, "checkout", "-q", "main")
+			runGit(t, dir, "checkout", "-q", "-b", fmt.Sprintf("change-%d", i))
+			path := filepath.Join(dir, filepath.FromSlash(tc.file))
+			f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+			require.NoError(t, err)
+			_, err = f.WriteString(tc.content)
+			require.NoError(t, err)
+			require.NoError(t, f.Close())
+			runGit(t, dir, "add", "-A")
+			runGit(t, dir, "-c", "user.name=test", "-c", "user.email=test@test.com", "commit", "-q", "-m", "change")
+
+			list := exec.Command("terramate", "list", "--changed", "--git-change-base", "main")
+			list.Dir = dir
+			list.Env = append(os.Environ(), "CHECKPOINT_DISABLE=1")
+			out, err := list.Output()
+			require.NoError(t, err)
+			changed := strings.Fields(string(out))
+
+			planned := atlantisAutoplans(t, cfg, tc.file)
+			require.Subset(t, planned, changed, "terramate list --changed reports a stack Atlantis wouldn't autoplan")
+			t.Logf("terramate list --changed: %v; autoplanned: %v", changed, planned)
+		})
+	}
 }

@@ -3,6 +3,7 @@ module github.com/devops-roast/terramate-atlantis-config
 go 1.25.5
 
 require (
+	github.com/moby/patternmatcher v0.6.1
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2
 	github.com/rs/zerolog v1.28.0
 	github.com/spf13/cobra v1.10.2
