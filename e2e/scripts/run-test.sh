@@ -18,14 +18,14 @@ command -v jq >/dev/null || {
 }
 
 if [ ! -f "$E2E_DIR/.env.secrets" ]; then
-	echo "ERROR: .env.secrets not found — run 'make setup' first"
+	echo "ERROR: .env.secrets not found — run 'make -C e2e up' first"
 	exit 1
 fi
 
 # shellcheck source=/dev/null
 source "$E2E_DIR/.env.secrets"
 export E2E_GITEA_TOKEN="${ATLANTIS_GITEA_TOKEN:?ATLANTIS_GITEA_TOKEN not set}"
-export E2E_DEV_TOKEN="${E2E_DEV_TOKEN:?E2E_DEV_TOKEN not set — re-run 'make setup'}"
+export E2E_DEV_TOKEN="${E2E_DEV_TOKEN:?E2E_DEV_TOKEN not set — re-run 'make -C e2e setup'}"
 
 E2E_WORK_DIR=$(mktemp -d)
 export E2E_WORK_DIR

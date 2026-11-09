@@ -114,11 +114,11 @@ cp -r "$E2E_DIR/fixtures/"* "$WORK_DIR/repo/"
 echo "[6/6] Creating webhook → Atlantis …"
 # Re-running setup must not add a second webhook, or Atlantis would receive
 # every event twice. Only "pull_request_only" (opened/closed/...) and
-# "pull_request_comment" (Gitea does not send "issue_comment" for comments on
-# pull requests) are subscribed: Gitea also sends a sync event when a pull
-# request is opened,
-# which Atlantis handles as a second "opened" event and races the first
-# autoplan. Scenarios that push more commits comment "atlantis plan" instead.
+# "pull_request_comment" (Gitea sends no "issue_comment" for pull request
+# comments) are subscribed. The sync event is left out: Gitea also sends it
+# when a pull request is opened, and Atlantis handles it as a second "opened"
+# event that races the first autoplan. Scenarios that push more commits
+# comment "atlantis plan" instead.
 if curl -sf "${GITEA_URL}/api/v1/repos/${GITEA_ADMIN_USER}/${TEST_REPO}/hooks" \
 	-H "Authorization: token ${TOKEN}" | grep -q 'http://atlantis:4141/events'; then
 	echo "      webhook already exists"

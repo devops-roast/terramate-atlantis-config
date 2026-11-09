@@ -24,7 +24,7 @@ workflows:
       steps:
         - apply
   # The echo marker lets E2E scenarios assert that a stack's
-  # atlantis_workflow global was honoured.
+  # atlantis_workflow global was honored.
   production:
     plan:
       steps:

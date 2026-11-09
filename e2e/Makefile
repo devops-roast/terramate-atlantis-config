@@ -36,7 +36,7 @@ down: ## Stop all services (data preserved)
 	$(COMPOSE) down
 
 .PHONY: setup
-setup: ## Re-run Gitea initialisation (idempotent)
+setup: ## Re-run Gitea initialization (idempotent)
 	@$(E2E_DIR)/scripts/setup.sh
 	$(COMPOSE) up -d --build --force-recreate atlantis
 	@$(E2E_DIR)/scripts/wait-for-url.sh $(ATLANTIS_URL)/healthz 90
