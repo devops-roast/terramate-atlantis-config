@@ -169,3 +169,22 @@ func TestExtractAtlantisGlobalsReportsUnknownKeys(t *testing.T) {
 		t.Fatalf("known keys must still be read, got workflow %q", got.Workflow)
 	}
 }
+
+// With several invalid globals the error must not depend on map iteration
+// order: the same stack always reports the same (first, by name) global.
+func TestExtractAtlantisGlobalsReportsErrorsDeterministically(t *testing.T) {
+	t.Parallel()
+
+	globals := map[string]cty.Value{
+		"atlantis_workflow":           cty.NumberIntVal(1),
+		"atlantis_skip":               cty.StringVal("yes"),
+		"atlantis_apply_requirements": cty.True,
+		"atlantis_terraform_version":  cty.True,
+	}
+	for i := 0; i < 50; i++ {
+		_, err := ExtractAtlantisGlobals(globals)
+		if err == nil || err.Error() != "atlantis_apply_requirements must be list of strings" {
+			t.Fatalf("run %d: got %v, want the error for atlantis_apply_requirements", i, err)
+		}
+	}
+}
