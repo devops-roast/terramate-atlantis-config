@@ -238,7 +238,7 @@ func TestCheckWithDiff(t *testing.T) {
 	})
 }
 
-func TestConfigFileValuesAreHonouredAndValidated(t *testing.T) {
+func TestConfigFileValuesAreHonoredAndValidated(t *testing.T) {
 	t.Run("output from config enables --check", func(t *testing.T) {
 		root := newFixture(t)
 		out := filepath.Join(t.TempDir(), "from-config.yaml")
