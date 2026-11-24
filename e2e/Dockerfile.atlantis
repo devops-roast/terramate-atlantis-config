@@ -3,7 +3,7 @@
 # The Atlantis version is pinned (and bumped by Dependabot) so the suite is
 # reproducible. Since Atlantis v0.49 the image no longer ships a terraform
 # binary, so a pinned terraform and terramate CLI are baked in here.
-FROM ghcr.io/runatlantis/atlantis:v0.49.0
+FROM ghcr.io/runatlantis/atlantis:v0.50.0
 
 ARG TERRAFORM_VERSION=1.17.1
 ARG TERRAMATE_VERSION=0.17.3
